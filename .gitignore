@@ -36,6 +36,7 @@ simulator/**/.ruff_cache/
 *.log
 coverage/
 htmlcov/
+logs/
 
 .idea/
 .vscode/

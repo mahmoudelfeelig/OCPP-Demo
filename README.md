@@ -62,6 +62,8 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 ## Operations Notes
 
 - Production secrets live in `deploy/.env` and are not committed.
+- Demo data is seeded only when `SEED_DEMO_DATA=true`.
+- For a first production admin, set `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` in `deploy/.env`, start the stack once, then remove or clear those values after the admin exists.
 - Rotate the partner webhook secret by updating `PARTNER_WEBHOOK_SECRET` in `deploy/.env` and restarting the stack; the UI shows this as a manual operator flow rather than an automated secret manager integration.
 - The database is the durable source of truth.
 - Redis is a cache only.

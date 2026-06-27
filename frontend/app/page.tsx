@@ -42,6 +42,15 @@ type SimulatorMessage = {
   payload?: unknown;
 };
 
+type PendingConfirmation = {
+  path: string;
+  label: string;
+  message: string;
+  body?: unknown;
+} | null;
+
+type DashboardView = "overview" | "sites" | "activity" | "simulator" | "sessions" | "admin";
+
 class ApiError extends Error {
   status: number;
 
@@ -54,15 +63,11 @@ class ApiError extends Error {
 const navItems = [
   { label: "Overview", id: "overview" },
   { label: "Sites", id: "sites" },
-  { label: "Stations", id: "stations" },
-  { label: "Sessions", id: "sessions" },
-  { label: "Events", id: "events" },
-  { label: "Messages", id: "messages" },
-  { label: "Webhooks", id: "webhooks" },
+  { label: "Activity", id: "activity" },
   { label: "Simulator", id: "simulator" },
-  { label: "System", id: "system" },
-  { label: "Admin", id: "admin" },
-];
+  { label: "Sessions", id: "sessions" },
+  { label: "Admin & system", id: "admin" },
+] as const;
 
 const predefinedScenarios = [
   "happy-path-charging-session",
@@ -89,6 +94,9 @@ const initialState: DashboardState = {
   scenarios: predefinedScenarios,
   systemStatus: null,
 };
+
+const siteUrl = "https://elfeel.me";
+const repoUrl = "https://github.com/mahmoudelfeelig/OCCP-Demo";
 
 async function requestJson(path: string, init: RequestInit = {}, token?: string) {
   const headers = new Headers(init.headers);
@@ -153,6 +161,90 @@ function EmptyState({ label }: { label: string }) {
   return <div className="empty-state">{label}</div>;
 }
 
+function ElephantLogo({ className = "" }: { className?: string }) {
+  return (
+    <img className={`elephant-logo ${className}`} src="/assets/brand/elephant-logo.png" alt="Mahmoud Elfeel elephant logo" />
+  );
+}
+
+function BrandLink({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`brand-link ${compact ? "compact" : ""}`}>
+      <button type="button" className="logo-refresh" onClick={() => window.location.reload()} aria-label="Refresh page">
+        <ElephantLogo />
+      </button>
+      {!compact ? <span>QWELLO</span> : null}
+    </div>
+  );
+}
+
+function SiteLogoButton({ className = "" }: { className?: string }) {
+  return (
+    <button type="button" className={className} onClick={() => window.location.reload()} aria-label="Refresh page">
+      <ElephantLogo />
+    </button>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <svg className="github-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 .7C5.7.7.8 5.6.8 11.9c0 4.9 3.2 9.1 7.7 10.6.6.1.8-.2.8-.5v-2c-3.1.7-3.8-1.3-3.8-1.3-.5-1.2-1.2-1.6-1.2-1.6-1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 .1.6 2.6 4.1 1.9.1-.7.4-1.2.7-1.5-2.5-.3-5.1-1.2-5.1-5.5 0-1.2.4-2.2 1.1-3-.1-.3-.5-1.5.1-2.9 0 0 .9-.3 3 1.1.9-.2 1.8-.4 2.7-.4s1.8.1 2.7.4c2.1-1.4 3-1.1 3-1.1.6 1.4.2 2.6.1 2.9.7.8 1.1 1.8 1.1 3 0 4.3-2.6 5.2-5.1 5.5.4.3.8 1 .8 2.1v3c0 .3.2.6.8.5 4.5-1.5 7.7-5.7 7.7-10.6C23.2 5.6 18.3.7 12 .7Z"
+      />
+    </svg>
+  );
+}
+
+function AppFooter() {
+  return (
+    <footer className="app-footer">
+      <SiteLogoButton className="footer-logo" />
+      <span>© Mahmoud elfeel 2026</span>
+      <a className="footer-github" href={repoUrl} aria-label="Open GitHub repository">
+        <GitHubIcon />
+      </a>
+    </footer>
+  );
+}
+
+function ConfirmDialog({
+  pending,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  pending: PendingConfirmation;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  if (!pending) return null;
+
+  return (
+    <div className="confirm-layer" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !busy) onCancel();
+    }}>
+      <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div>
+          <span className="confirm-kicker">Confirm action</span>
+          <h2 id="confirm-title">{pending.label}</h2>
+          <p>{pending.message}</p>
+        </div>
+        <div className="confirm-actions">
+          <button type="button" className="ghost-button" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className="primary-button" onClick={onConfirm} disabled={busy}>
+            {busy ? "Working..." : "Continue"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function LoginScreen({
   onSubmit,
   loading,
@@ -162,16 +254,15 @@ function LoginScreen({
   loading: boolean;
   error: string | null;
 }) {
-  const [email, setEmail] = useState("admin@localhost");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   return (
     <main className="login-screen">
       <aside className="login-rail">
-        <div className="brand-mark">QWELLO</div>
+        <BrandLink />
         <div className="rail-copy">
           <p>EV charging backend lifecycle demo.</p>
-          <p>OCPP 1.6, outbox, operator views, simulator control.</p>
         </div>
       </aside>
 
@@ -190,22 +281,19 @@ function LoginScreen({
         >
           <label>
             Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} />
+            <input value={email} placeholder="Email" onChange={(event) => setEmail(event.target.value)} />
           </label>
           <label>
             Password
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <input type="password" value={password} placeholder="Password" onChange={(event) => setPassword(event.target.value)} />
           </label>
           <button type="submit" disabled={loading}>
             {loading ? "Signing in..." : "Sign in"}
           </button>
           {error ? <p className="error">{error}</p> : null}
         </form>
-        <div className="seed-box">
-          <span>admin@localhost / admin123</span>
-          <span>operator@localhost / operator123</span>
-        </div>
       </section>
+      <AppFooter />
     </main>
   );
 }
@@ -232,6 +320,9 @@ export default function Page() {
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [newUser, setNewUser] = useState({ email: "", password: "", role: "operator", display_name: "" });
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
 
   function clearSession(message = "Session expired. Sign in again.") {
     window.localStorage.removeItem("ocpp-token");
@@ -469,8 +560,18 @@ export default function Page() {
   }
 
   async function confirmAndPost(path: string, label: string, message: string, body?: unknown) {
-    if (!window.confirm(message)) return;
-    await postAction(path, label, body);
+    setPendingConfirmation({ path, label, message, body });
+  }
+
+  async function acceptConfirmation() {
+    if (!pendingConfirmation) return;
+    setConfirmBusy(true);
+    try {
+      await postAction(pendingConfirmation.path, pendingConfirmation.label, pendingConfirmation.body);
+      setPendingConfirmation(null);
+    } finally {
+      setConfirmBusy(false);
+    }
   }
 
   async function runScenario() {
@@ -487,18 +588,23 @@ export default function Page() {
     <main className="dashboard-shell">
       <aside className="sidebar">
         <div>
-          <div className="brand-mark">QWELLO</div>
+          <BrandLink />
           <div className="sidebar-copy">
             <p>Operations console</p>
-            <p>OCPP ingestion, session lifecycle, outbox recovery, simulator control.</p>
+            <p>Fleet operations dashboard.</p>
           </div>
         </div>
 
         <nav className="sidebar-nav">
           {navItems.map((item) => (
-            <a key={item.id} href={`#${item.id}`} className={item.id === "overview" ? "active" : ""}>
+            <button
+              key={item.id}
+              type="button"
+              className={activeView === item.id ? "active" : ""}
+              onClick={() => setActiveView(item.id)}
+            >
               {item.label}
-            </a>
+            </button>
           ))}
         </nav>
 
@@ -523,22 +629,14 @@ export default function Page() {
 
       <section className="workspace">
         <header className="topbar">
-          <div className="topbar-left">
-            <span>LOCAL</span>
-            <span>{ready.status ?? "STARTING"}</span>
-            <span>{health.status ?? "UNKNOWN"}</span>
-          </div>
-          <div className="topbar-right">
-            <span className={actionError ? "action-error" : ""}>{actionLabel}</span>
-            <span>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-            <button type="button" onClick={refresh}>
-              Refresh
-            </button>
-          </div>
+          <button type="button" onClick={refresh}>
+            Refresh
+          </button>
         </header>
 
-        <div className="hero-row">
-          <Surface tone="light" className="overview-card" id="overview">
+        <div className="view-content">
+        {activeView === "overview" ? <div className="hero-row">
+          <Surface tone="dark" className="overview-card" id="overview">
             <div className="card-head">
               <div>
                 <div className="eyebrow">overview</div>
@@ -584,7 +682,7 @@ export default function Page() {
             </div>
           </Surface>
 
-          <Surface tone="light" className="station-card" id="station-detail">
+          <Surface tone="dark" className="station-card" id="station-detail">
             <div className="station-detail-head">
               <div>
                 <div className="breadcrumb">Stations / {selectedStation?.external_id ?? "—"}</div>
@@ -651,7 +749,9 @@ export default function Page() {
                   </div>
                 ))}
                 {!stationMessages.length ? <EmptyState label="No station messages yet." /> : null}
-                <a href="#messages">View all messages →</a>
+                <button type="button" className="text-link" onClick={() => setActiveView("activity")}>
+                  View all messages →
+                </button>
               </div>
 
               <div className="station-actions">
@@ -687,10 +787,10 @@ export default function Page() {
               <p>Station {selectedConnector?.station_id ?? "—"}</p>
             </div>
           </Surface>
-        </div>
+        </div> : null}
 
-        <div className="lower-grid">
-          <Surface tone="dark" className="stream-card" id="events">
+        <div className={`lower-grid view-${activeView}`}>
+          {activeView === "activity" ? <Surface tone="dark" className="stream-card" id="events">
             <div className="card-head">
               <div>
                 <div className="eyebrow">event stream</div>
@@ -713,27 +813,45 @@ export default function Page() {
               ))}
               {!liveEvents.length ? <EmptyState label="No events yet. Run a simulator scenario to populate the stream." /> : null}
             </div>
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="map-card" id="sites">
+          {activeView === "sites" ? <Surface tone="dark" className="map-card" id="sites">
             <div className="card-head">
               <div>
-                <div className="eyebrow">sites map</div>
+                <div className="eyebrow">sites</div>
                 <h2>Sites</h2>
               </div>
             </div>
-            <div className="site-map">
-              {state.sites.map((site, index) => (
-                <div key={site.id} className={`map-pin pin-${index % 4}`}>
-                  <span>{site.label}</span>
-                  <small>{state.stations.filter((station) => station.site_id === site.id).length} stations</small>
-                </div>
-              ))}
+            <div className="site-list">
+              {state.sites.map((site) => {
+                const stationsForSite = state.stations.filter((station) => station.site_id === site.id);
+                const onlineForSite = stationsForSite.filter((station) => station.online).length;
+                return (
+                  <button
+                    key={site.id}
+                    type="button"
+                    className={`site-row ${selectedSite?.id === site.id ? "selected" : ""}`}
+                    onClick={() => {
+                      setSelectedSiteId(site.id);
+                      setSelectedStationId(stationsForSite[0]?.id ?? null);
+                    }}
+                  >
+                    <span>
+                      <strong>{site.label}</strong>
+                      <small>{site.is_active ? "Active site" : "Inactive site"}</small>
+                    </span>
+                    <span>
+                      <strong>{stationsForSite.length}</strong>
+                      <small>{onlineForSite} online</small>
+                    </span>
+                  </button>
+                );
+              })}
               {!state.sites.length ? <EmptyState label="No sites seeded." /> : null}
             </div>
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="simulator-card" id="simulator">
+          {activeView === "simulator" ? <Surface tone="dark" className="simulator-card" id="simulator">
             <div className="card-head">
               <div>
                 <div className="eyebrow">simulator</div>
@@ -797,9 +915,9 @@ export default function Page() {
               ))}
               {!simulatorMessages.length ? <EmptyState label="No simulator messages yet." /> : null}
             </div>
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="session-card" id="sessions">
+          {activeView === "sessions" ? <Surface tone="dark" className="session-card" id="sessions">
             <div className="card-head">
               <div>
                 <div className="eyebrow">session</div>
@@ -840,9 +958,9 @@ export default function Page() {
               {!selectedStateHistory.length ? <EmptyState label="No state transitions recorded for this selection." /> : null}
             </div>
             <button type="button" className="ghost-button wide">View full detail</button>
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="raw-card" id="messages">
+          {activeView === "activity" ? <Surface tone="dark" className="raw-card" id="messages">
             <div className="card-head">
               <div>
                 <div className="eyebrow">raw message</div>
@@ -860,9 +978,9 @@ export default function Page() {
                 <strong>{formatTime(state.messages[0]?.received_at)}</strong>
               </div>
             </div>
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="admin-card" id="admin">
+          {activeView === "admin" ? <Surface tone="dark" className="admin-card" id="admin">
             <div className="card-head">
               <div>
                 <div className="eyebrow">admin</div>
@@ -910,15 +1028,15 @@ export default function Page() {
                   >
                     Create user
                   </button>
-                  <button type="button" className="ghost-button" disabled title="Rotate the partner webhook secret by updating deploy/.env and restarting the stack.">
-                    Webhook secret rotation
+                  <button type="button" className="ghost-button user-form-wide" disabled title="Rotate the partner webhook secret by updating deploy/.env and restarting the stack.">
+                    Rotate webhook secret
                   </button>
                 </div>
               </div>
             ) : null}
-          </Surface>
+          </Surface> : null}
 
-          <Surface tone="dark" className="system-card" id="system">
+          {activeView === "admin" || activeView === "activity" ? <Surface tone="dark" className="system-card" id="system">
             <div className="card-head">
               <div>
                 <div className="eyebrow">system</div>
@@ -959,9 +1077,17 @@ export default function Page() {
               ))}
               {!webhookRows.length ? <EmptyState label="No partner webhook events yet." /> : null}
             </div>
-          </Surface>
+          </Surface> : null}
         </div>
+        </div>
+        <AppFooter />
       </section>
+      <ConfirmDialog
+        pending={pendingConfirmation}
+        busy={confirmBusy}
+        onCancel={() => setPendingConfirmation(null)}
+        onConfirm={acceptConfirmation}
+      />
     </main>
   );
 }
