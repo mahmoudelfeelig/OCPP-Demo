@@ -31,7 +31,8 @@ services:
       - ./otel/collector.yaml:/etc/otelcol/config.yaml:ro
 
   backend:
-    image: ghcr.io/${GHCR_OWNER:-replace-me}/ocpp-backend-demo-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
     restart: unless-stopped
     env_file:
       - deploy/.env
@@ -50,7 +51,8 @@ services:
       retries: 10
 
   worker:
-    image: ghcr.io/${GHCR_OWNER:-replace-me}/ocpp-backend-demo-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
     restart: unless-stopped
     env_file:
       - deploy/.env
@@ -64,7 +66,8 @@ services:
         condition: service_started
 
   frontend:
-    image: ghcr.io/${GHCR_OWNER:-replace-me}/ocpp-backend-demo-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./frontend
     restart: unless-stopped
     env_file:
       - deploy/.env
@@ -78,7 +81,8 @@ services:
       retries: 10
 
   simulator:
-    image: ghcr.io/${GHCR_OWNER:-replace-me}/ocpp-backend-demo-simulator:${IMAGE_TAG:-latest}
+    build:
+      context: ./simulator
     restart: unless-stopped
     env_file:
       - deploy/.env
@@ -93,7 +97,7 @@ services:
 
   caddy:
     image: caddy:2.8-alpine
-    container_name: ocpp-demo-edge
+    container_name: ocpp-demo-web
     restart: unless-stopped
     depends_on:
       backend:
@@ -103,14 +107,14 @@ services:
       simulator:
         condition: service_healthy
     expose:
-      - "8080"
+      - "80"
     volumes:
       - ./deploy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
     networks:
       - default
       - web
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz | grep -qi ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz | grep -qi ok"]
       interval: 10s
       timeout: 5s
       retries: 10

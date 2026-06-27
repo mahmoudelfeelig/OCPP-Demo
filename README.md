@@ -79,15 +79,25 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 
 ## Deployment
 
-- See [`docs/hetzner-deployment.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/hetzner-deployment.md) for the Hetzner/Caddy production layout.
 - The production stack uses [`docker-compose.prod.yml`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docker-compose.prod.yml).
+- Production builds images directly on the Hetzner server from the checked-out source; no GHCR registry is required.
+- The app edge container is named `ocpp-demo-web` and joins the shared external Docker network `web`.
 - The host-Caddy sample lives in [`deploy/Caddyfile.host.example`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/deploy/Caddyfile.host.example).
 
-## Demo References
+Host Caddy route:
 
-- [`docs/architecture.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/architecture.md) - system diagram and reliability notes
-- [`docs/interview-demo-script.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/interview-demo-script.md) - screen-by-screen interview walkthrough
-- [`docs/ocpp-happy-path-transcript.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/ocpp-happy-path-transcript.md) - representative OCPP frames and expected state
-- [`docs/log-trace-cheat-sheet.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/log-trace-cheat-sheet.md) - logs, traces, and metrics talking points
-- [`docs/compose-smoke-transcript.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/compose-smoke-transcript.md) - Compose verification checklist
-- [`docs/final-demo-checklist.md`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docs/final-demo-checklist.md) - clean checkout, rehearsal, and `ocpp.elfeel.me` checklist
+```caddy
+ocpp.elfeel.me {
+    reverse_proxy ocpp-demo-web:80
+}
+```
+
+Server deploy command:
+
+```bash
+cd /opt/ocpp-backend-demo
+git pull --ff-only
+docker compose --env-file deploy/.env -f docker-compose.prod.yml up -d --build --remove-orphans
+```
+
+GitHub Actions deploys by SSHing into the server and running that same source-build flow after tests pass.
