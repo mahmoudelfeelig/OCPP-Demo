@@ -65,7 +65,7 @@ jobs:
       - name: Start Compose stack
         run: docker compose up -d
       - name: Run Compose smoke
-        run: ./scripts/compose-smoke.sh
+        run: bash ./scripts/compose-smoke.sh
       - name: Show service status
         if: always()
         run: docker compose ps
