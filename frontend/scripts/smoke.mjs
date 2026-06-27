@@ -8,14 +8,13 @@ const styles = readFileSync(resolve(root, "app/globals.css"), "utf8");
 const requiredScreens = [
   "Overview",
   "Sites",
-  "Stations",
+  "Activity",
   "Sessions",
-  "Events",
-  "Messages",
-  "Webhooks",
   "Simulator",
-  "System",
-  "Admin",
+  "Admin & system",
+  "Live events",
+  "Message payload",
+  "Health and observability",
 ];
 
 const requiredScenarios = [
@@ -30,8 +29,10 @@ const requiredScenarios = [
 ];
 
 const requiredUiSignals = [
-  "admin@localhost",
-  "operator@localhost",
+  "Email",
+  "Password",
+  "Fleet operations dashboard.",
+  "© Mahmoud elfeel 2026",
   "loading-screen",
   "error",
   "confirmAndPost",
