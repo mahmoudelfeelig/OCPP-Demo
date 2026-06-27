@@ -1,0 +1,76 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const root = process.cwd();
+const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+const styles = readFileSync(resolve(root, "app/globals.css"), "utf8");
+
+const requiredScreens = [
+  "Overview",
+  "Sites",
+  "Stations",
+  "Sessions",
+  "Events",
+  "Messages",
+  "Webhooks",
+  "Simulator",
+  "System",
+  "Admin",
+];
+
+const requiredScenarios = [
+  "happy-path-charging-session",
+  "duplicate-meter-value",
+  "station-offline-online",
+  "connector-fault",
+  "interrupted-session",
+  "partner-webhook",
+  "invalid-partner-signature",
+  "duplicate-partner-event",
+];
+
+const requiredUiSignals = [
+  "admin@localhost",
+  "operator@localhost",
+  "loading-screen",
+  "error",
+  "confirmAndPost",
+  "Connector detail",
+  "connector_number ? String",
+  "Retry failed outbox",
+  "Acknowledge dead letter",
+];
+
+const missing = [];
+
+for (const label of requiredScreens) {
+  if (!page.includes(`label: "${label}"`) && !page.includes(`>${label}<`)) {
+    missing.push(`screen:${label}`);
+  }
+}
+
+for (const scenario of requiredScenarios) {
+  if (!page.includes(scenario)) {
+    missing.push(`scenario:${scenario}`);
+  }
+}
+
+for (const signal of requiredUiSignals) {
+  if (!page.includes(signal) && !styles.includes(signal)) {
+    missing.push(`ui:${signal}`);
+  }
+}
+
+if (!styles.includes("radial-gradient") || !styles.includes("rgba(") || !styles.includes("--shadow")) {
+  missing.push("visual:liquid-glass-style");
+}
+
+if (missing.length > 0) {
+  console.error("Frontend smoke check failed:");
+  for (const item of missing) {
+    console.error(`- ${item}`);
+  }
+  process.exit(1);
+}
+
+console.log("frontend smoke checks passed");
