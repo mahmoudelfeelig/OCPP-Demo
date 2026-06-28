@@ -146,3 +146,25 @@ async def test_admin_can_use_recovery_and_maintenance_actions(api_db) -> None:
         assert (await client.post(f"/admin/connectors/{connector['id']}/available", headers=headers)).status_code == 200
         assert (await client.post(f"/admin/outbox/{failed['id']}/retry", headers=headers)).status_code == 200
         assert (await client.post(f"/admin/outbox/{dead_letter['id']}/ack", headers=headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_actions_return_404_for_missing_entities(api_db) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        token = token_for(api_db, "admin@test.local")
+        headers = {"Authorization": f"Bearer {token}"}
+        requests = [
+            ("/admin/outbox/missing/retry", None),
+            ("/admin/outbox/missing/ack", None),
+            ("/admin/stations/missing/maintenance", {"enabled": True}),
+            ("/admin/connectors/missing/available", None),
+            ("/admin/connectors/missing/unavailable", None),
+            ("/admin/users/missing/role", {"role": "operator"}),
+            ("/admin/users/missing/activate", None),
+            ("/admin/users/missing/deactivate", None),
+        ]
+
+        for path, payload in requests:
+            response = await client.post(path, json=payload, headers=headers)
+            assert response.status_code == 404, path

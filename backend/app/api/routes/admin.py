@@ -48,7 +48,12 @@ def active_admin_count(db: Session) -> int:
     )
 
 
-@router.post("/simulator/remote-start", response_model=AdminActionResponse)
+@router.post(
+    "/simulator/remote-start",
+    response_model=AdminActionResponse,
+    summary="Record a simulated start action",
+    description="Writes an admin audit event only. It does not send an outbound OCPP command.",
+)
 async def remote_start_simulation(
     current_user: CurrentUser = Depends(require_role("admin", "operator")),
     db: Session = Depends(get_db),
@@ -63,10 +68,15 @@ async def remote_start_simulation(
         )
     )
     db.commit()
-    return AdminActionResponse(status="accepted", action="remote_start_simulation")
+    return AdminActionResponse(status="recorded", action="remote_start_simulation")
 
 
-@router.post("/simulator/remote-stop", response_model=AdminActionResponse)
+@router.post(
+    "/simulator/remote-stop",
+    response_model=AdminActionResponse,
+    summary="Record a simulated stop action",
+    description="Writes an admin audit event only. It does not send an outbound OCPP command.",
+)
 async def remote_stop_simulation(
     current_user: CurrentUser = Depends(require_role("admin", "operator")),
     db: Session = Depends(get_db),
@@ -81,7 +91,7 @@ async def remote_stop_simulation(
         )
     )
     db.commit()
-    return AdminActionResponse(status="accepted", action="remote_stop_simulation")
+    return AdminActionResponse(status="recorded", action="remote_stop_simulation")
 
 
 @router.post("/outbox/{event_id}/retry", response_model=AdminActionResponse)
@@ -91,13 +101,14 @@ async def retry_outbox_event(
     db: Session = Depends(get_db),
 ) -> AdminActionResponse:
     event = db.get(OutboxEvent, event_id)
-    if event is not None:
-        event.status = OutboxStatus.PENDING.value
-        event.next_attempt_at = None
-        event.last_error = None
-        event.locked_at = None
-        event.locked_by = None
-        event.attempts = 0
+    if event is None:
+        raise HTTPException(status_code=404, detail="Outbox event not found")
+    event.status = OutboxStatus.PENDING.value
+    event.next_attempt_at = None
+    event.last_error = None
+    event.locked_at = None
+    event.locked_by = None
+    event.attempts = 0
     db.add(
         AuditEvent(
             actor_user_id=current_user.id,
@@ -118,17 +129,18 @@ async def acknowledge_dead_letter(
     db: Session = Depends(get_db),
 ) -> AdminActionResponse:
     event = db.get(OutboxEvent, event_id)
-    if event is not None:
-        if event.status != OutboxStatus.DEAD_LETTERED.value:
-            raise HTTPException(status_code=409, detail="Only dead-lettered events can be acknowledged")
-        OutboxRepository(db).acknowledge_dead_letter(event, current_user.id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Outbox event not found")
+    if event.status != OutboxStatus.DEAD_LETTERED.value:
+        raise HTTPException(status_code=409, detail="Only dead-lettered events can be acknowledged")
+    OutboxRepository(db).acknowledge_dead_letter(event, current_user.id)
     db.add(
         AuditEvent(
             actor_user_id=current_user.id,
             action="ack_dead_letter",
             entity_type="outbox",
             entity_id=event_id,
-            payload={"status_preserved": event.status if event is not None else None},
+            payload={"status_preserved": event.status},
         )
     )
     db.commit()
@@ -202,7 +214,7 @@ async def update_user_role(
 ) -> AdminActionResponse:
     user = db.get(User, user_id)
     if user is None:
-        return AdminActionResponse(status="missing", action=f"update_user_role:{user_id}")
+        raise HTTPException(status_code=404, detail="User not found")
     role = db.scalar(select(Role).where(Role.name == payload.get("role", "operator")))
     if role is None:
         raise HTTPException(status_code=400, detail="Unknown role")
@@ -232,7 +244,7 @@ async def deactivate_user(
         raise HTTPException(status_code=409, detail="You cannot remove your own account")
     user = db.get(User, user_id)
     if user is None:
-        return AdminActionResponse(status="missing", action=f"deactivate_user:{user_id}")
+        raise HTTPException(status_code=404, detail="User not found")
     if user.role.name == "admin" and user.is_active and active_admin_count(db) <= 1:
         raise HTTPException(status_code=409, detail="Cannot remove the last active admin")
     user.is_active = False
@@ -257,7 +269,7 @@ async def activate_user(
 ) -> AdminActionResponse:
     user = db.get(User, user_id)
     if user is None:
-        return AdminActionResponse(status="missing", action=f"activate_user:{user_id}")
+        raise HTTPException(status_code=404, detail="User not found")
     user.is_active = True
     db.add(
         AuditEvent(
@@ -280,18 +292,19 @@ async def toggle_station_maintenance(
     db: Session = Depends(get_db),
 ) -> AdminActionResponse:
     station = db.get(Station, station_id)
-    if station is not None:
-        station.maintenance_mode = bool(payload.get("enabled", True))
-        db.add(
-            AuditEvent(
-                actor_user_id=current_user.id,
-                action="toggle_station_maintenance",
-                entity_type="station",
-                entity_id=station.id,
-                payload={"enabled": station.maintenance_mode},
-            )
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    station.maintenance_mode = bool(payload.get("enabled", True))
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="toggle_station_maintenance",
+            entity_type="station",
+            entity_id=station.id,
+            payload={"enabled": station.maintenance_mode},
         )
-        db.commit()
+    )
+    db.commit()
     return AdminActionResponse(status="accepted", action=f"station_maintenance:{station_id}")
 
 
@@ -302,18 +315,19 @@ async def connector_available(
     db: Session = Depends(get_db),
 ) -> AdminActionResponse:
     connector = db.get(Connector, connector_id)
-    if connector is not None:
-        connector.state = ConnectorState.AVAILABLE.value
-        db.add(
-            AuditEvent(
-                actor_user_id=current_user.id,
-                action="connector_available",
-                entity_type="connector",
-                entity_id=connector.id,
-                payload={},
-            )
+    if connector is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    connector.state = ConnectorState.AVAILABLE.value
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="connector_available",
+            entity_type="connector",
+            entity_id=connector.id,
+            payload={},
         )
-        db.commit()
+    )
+    db.commit()
     return AdminActionResponse(status="accepted", action=f"connector_available:{connector_id}")
 
 
@@ -324,16 +338,17 @@ async def connector_unavailable(
     db: Session = Depends(get_db),
 ) -> AdminActionResponse:
     connector = db.get(Connector, connector_id)
-    if connector is not None:
-        connector.state = ConnectorState.UNAVAILABLE.value
-        db.add(
-            AuditEvent(
-                actor_user_id=current_user.id,
-                action="connector_unavailable",
-                entity_type="connector",
-                entity_id=connector.id,
-                payload={},
-            )
+    if connector is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    connector.state = ConnectorState.UNAVAILABLE.value
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="connector_unavailable",
+            entity_type="connector",
+            entity_id=connector.id,
+            payload={},
         )
-        db.commit()
+    )
+    db.commit()
     return AdminActionResponse(status="accepted", action=f"connector_unavailable:{connector_id}")

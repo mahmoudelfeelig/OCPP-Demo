@@ -11,8 +11,8 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 - Python backend with FastAPI
 - PostgreSQL as the source of truth
 - SQLAlchemy and Alembic for persistence
-- Redis for cache-only use
-- Outbox-driven async processing
+- Redis for limited cache and worker-heartbeat use
+- Durable outbox processing scaffolding
 - Separate frontend and simulator containers
 - Caddy reverse proxy
 - JWT auth with `admin` and `operator` roles
@@ -68,8 +68,10 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 - Do not use demo seeded accounts as a production bootstrap path.
 - Rotate the partner webhook secret by updating `PARTNER_WEBHOOK_SECRET` in `deploy/.env` and restarting the stack; the UI shows this as a manual operator flow rather than an automated secret manager integration.
 - The database is the durable source of truth.
-- Redis is a cache only.
-- Worker processing is idempotent and outbox-backed.
+- Redis is used for short-lived station snapshots and worker heartbeat state. Most dashboard reads still query PostgreSQL directly.
+- Worker processing is idempotent and outbox-backed. The current handlers mark OCPP messages and partner events processed; downstream webhook fanout, command dispatch, and projection consumers are not implemented.
+- The controls named as simulated start/stop actions write audit events only. They do not call the simulator or send OCPP `RemoteStartTransaction` or `RemoteStopTransaction` commands.
+- `StartTransaction` follows OCPP 1.6 ownership: the charger sends the request without a transaction ID, the central system returns one, and later `MeterValues` and `StopTransaction` requests reuse it.
 - Detailed traces stay in logs or the local collector output, not in the UI.
 - Demo JWTs are intentionally short-lived operational tokens, not refresh-token sessions. Expired tokens are cleared by the UI and require logging in again.
 - Repository tests that need PostgreSQL use a disposable database URL through `OCPP_POSTGRES_TEST_URL`; do not point that variable at a database you want to keep.

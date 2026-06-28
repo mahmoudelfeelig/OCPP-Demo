@@ -58,10 +58,25 @@ def seed_demo_data(db: Session) -> None:
     db.add_all(sites)
     db.flush()
 
+    seeded_at = datetime.now(UTC)
     stations = [
-        Station(site_id=sites[0].id, external_id="BER-001", label="Mitte North Bay", state=StationState.ONLINE.value, online=True),
+        Station(
+            site_id=sites[0].id,
+            external_id="BER-001",
+            label="Mitte North Bay",
+            state=StationState.ONLINE.value,
+            online=True,
+            last_seen_at=seeded_at,
+        ),
         Station(site_id=sites[0].id, external_id="BER-002", label="Mitte South Bay", state=StationState.OFFLINE.value, online=False),
-        Station(site_id=sites[1].id, external_id="HAM-001", label="Harbor Fast DC", state=StationState.ONLINE.value, online=True),
+        Station(
+            site_id=sites[1].id,
+            external_id="HAM-001",
+            label="Harbor Fast DC",
+            state=StationState.ONLINE.value,
+            online=True,
+            last_seen_at=seeded_at,
+        ),
         Station(site_id=sites[2].id, external_id="MUC-001", label="South Plaza", state=StationState.FAULTED.value, online=False),
     ]
     db.add_all(stations)

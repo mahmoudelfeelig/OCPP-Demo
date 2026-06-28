@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 
 import pytest
@@ -20,7 +22,7 @@ from app.models.entities import (
     TransactionState,
 )
 from app.services.outbox import process_outbox_event
-from app.services.ingestion import ingest_ocpp_message
+from app.services.ingestion import extract_ocpp_message_id, ingest_ocpp_message
 
 
 def test_ocpp_message_ingestion_is_idempotent(db_session) -> None:
@@ -105,6 +107,38 @@ def test_ocpp_ingestion_rejects_unsupported_action(db_session) -> None:
         ingest_ocpp_message(db_session, station.id, '[2,"bad-action","DataTransfer",{}]')
 
 
+@pytest.mark.parametrize(
+    ("message", "error"),
+    [
+        (
+            '[2,"start-missing-timestamp","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0}]',
+            "missing required field.*timestamp",
+        ),
+        (
+            '[2,"start-client-transaction","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z","transactionId":42}]',
+            "assigned by the central system",
+        ),
+        (
+            '[2,"empty-meter-values","MeterValues",{"connectorId":1,"transactionId":42,"meterValue":[]}]',
+            "must be a non-empty array",
+        ),
+        (
+            '[2,"empty-sampled-values","MeterValues",{"connectorId":1,"transactionId":42,"meterValue":[{"timestamp":"2026-06-26T12:00:00Z","sampledValue":[]}]}]',
+            "sampledValue must be a non-empty array",
+        ),
+    ],
+)
+def test_ocpp_ingestion_validates_supported_action_payloads(db_session, message: str, error: str) -> None:
+    with pytest.raises(ValueError, match=error):
+        ingest_ocpp_message(db_session, "station-not-needed", message)
+
+
+def test_extract_ocpp_message_id_preserves_parseable_call_correlation() -> None:
+    assert extract_ocpp_message_id('[2,"correlated-message","Heartbeat",{}]') == "correlated-message"
+    assert extract_ocpp_message_id("not-json") is None
+    assert extract_ocpp_message_id("[2]") is None
+
+
 def test_outbox_event_dead_letters_after_handler_failure(db_session, monkeypatch) -> None:
     event = OutboxEvent(
         event_type="ocpp.bootnotification",
@@ -140,12 +174,24 @@ def test_duplicate_meter_value_payload_is_idempotent(db_session) -> None:
     db_session.add(Connector(station_id=station.id, connector_number=1, state=ConnectorState.AVAILABLE.value))
     db_session.commit()
 
-    ingest_ocpp_message(
+    start_result = ingest_ocpp_message(
         db_session,
         station.id,
-        '[2,"start-meter","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"transactionId":7001}]',
+        '[2,"start-meter","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
     )
-    meter_payload = '{"transactionId":7001,"connectorId":1,"meterValue":[{"timestamp":"2026-06-26T12:00:00Z","sampledValue":[{"value":"42.5","unit":"kWh"}]}]}'
+    transaction_id = start_result["response_payload"]["transactionId"]
+    meter_payload = json.dumps(
+        {
+            "transactionId": transaction_id,
+            "connectorId": 1,
+            "meterValue": [
+                {
+                    "timestamp": "2026-06-26T12:00:00Z",
+                    "sampledValue": [{"value": "42.5", "unit": "kWh"}],
+                }
+            ],
+        }
+    )
     ingest_ocpp_message(db_session, station.id, f'[2,"meter-a","MeterValues",{meter_payload}]')
     ingest_ocpp_message(db_session, station.id, f'[2,"meter-b","MeterValues",{meter_payload}]')
 
@@ -169,17 +215,50 @@ def test_ocpp_happy_path_lifecycle(db_session) -> None:
 
     ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"boot-happy","BootNotification",{"chargePointVendor":"OCPP-Demo","chargePointModel":"Demo"}]')
     ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"auth-happy","Authorize",{"idTag":"ABC"}]')
+    start_result = ingest_ocpp_message(
+        db_session,
+        "ST-HAPPY",
+        '[2,"start-happy","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
+    )
+    transaction_id = start_result["response_payload"]["transactionId"]
     ingest_ocpp_message(
         db_session,
         "ST-HAPPY",
-        '[2,"start-happy","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"transactionId":8801}]',
+        json.dumps(
+            [
+                2,
+                "meter-happy",
+                "MeterValues",
+                {
+                    "transactionId": transaction_id,
+                    "connectorId": 1,
+                    "meterValue": [
+                        {
+                            "timestamp": "2026-06-26T12:05:00Z",
+                            "sampledValue": [{"value": "12.5", "unit": "kWh"}],
+                        }
+                    ],
+                },
+            ]
+        ),
     )
     ingest_ocpp_message(
         db_session,
         "ST-HAPPY",
-        '[2,"meter-happy","MeterValues",{"transactionId":8801,"connectorId":1,"meterValue":[{"timestamp":"2026-06-26T12:05:00Z","sampledValue":[{"value":"12.5","unit":"kWh"}]}]}]',
+        json.dumps(
+            [
+                2,
+                "stop-happy",
+                "StopTransaction",
+                {
+                    "transactionId": transaction_id,
+                    "meterStop": 13,
+                    "timestamp": "2026-06-26T12:10:00Z",
+                    "reason": "Local",
+                },
+            ]
+        ),
     )
-    ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"stop-happy","StopTransaction",{"transactionId":8801,"meterStop":13,"reason":"Local"}]')
 
     session = db_session.query(ChargingSession).one()
     transaction = db_session.query(Transaction).one()
@@ -190,6 +269,7 @@ def test_ocpp_happy_path_lifecycle(db_session) -> None:
     assert session.state == SessionState.COMPLETED.value
     assert session.transaction_state == TransactionState.CLOSED.value
     assert transaction.state == TransactionState.CLOSED.value
+    assert transaction.ocpp_transaction_id == str(transaction_id)
     assert connector.state == ConnectorState.AVAILABLE.value
     assert db_session.query(MeterValue).count() == 1
 
@@ -208,7 +288,7 @@ def test_ocpp_interrupted_session_lifecycle(db_session) -> None:
     ingest_ocpp_message(
         db_session,
         "ST-INTERRUPT",
-        '[2,"start-interrupt","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"transactionId":9902}]',
+        '[2,"start-interrupt","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
     )
     ingest_ocpp_message(
         db_session,

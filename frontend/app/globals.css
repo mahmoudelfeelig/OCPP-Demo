@@ -320,6 +320,8 @@ button:hover {
   background: transparent;
   padding: 0;
   box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .logo-refresh:hover,
@@ -343,7 +345,7 @@ button:hover {
   display: block;
   width: 40px;
   height: 40px;
-  color: #c5aeb8;
+  object-fit: contain;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.22));
 }
 
@@ -1623,6 +1625,8 @@ button:hover {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .footer-logo .elephant-logo {

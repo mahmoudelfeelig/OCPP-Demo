@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 
 type JsonRecord = Record<string, unknown>;
@@ -380,19 +381,14 @@ function EmptyState({ label }: { label: string }) {
 
 function ElephantLogo({ className = "" }: { className?: string }) {
   return (
-    <svg className={`elephant-logo ${className}`} viewBox="0 0 64 64" role="img" aria-label="OCPP-Demo elephant logo">
-      <path
-        d="M10 33c0-12 9-21 22-21 11 0 20 7 22 17 4 1 7 5 7 10 0 6-4 11-10 11h-5v-8c0-2-2-4-4-4s-4 2-4 4v8H24v-8c0-2-2-4-4-4s-4 2-4 4v8h-2c-5 0-9-4-9-9 0-4 2-7 5-8Z"
-        fill="currentColor"
-      />
-      <path
-        d="M46 27c5 0 9 4 9 9 0 4-3 8-7 8-6 0-12-5-12-12 0-3 2-5 5-5h5Z"
-        fill="rgba(255,255,255,0.35)"
-      />
-      <path d="M49 34a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" fill="#07111f" />
-      <path d="M55 42c-1 6-5 9-10 9" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
-      <path d="M9 34H4" stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
-    </svg>
+    <Image
+      className={`elephant-logo ${className}`}
+      src="/assets/brand/elephant-logo.png"
+      width={256}
+      height={256}
+      alt="OCPP-Demo elephant logo"
+      priority
+    />
   );
 }
 
@@ -1054,13 +1050,13 @@ export default function Page() {
                   <strong>Mark connector unavailable</strong>
                   <small>Use when the connector needs attention.</small>
                 </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-start", "Remote start transaction", `Start a simulated transaction for ${selectedStationName}. This is for demo and recovery testing.`)}>
-                  <strong>Remote start simulation</strong>
-                  <small>Start a controlled test transaction.</small>
+                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", `Record a simulated start audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
+                  <strong>Record simulated start</strong>
+                  <small>Audit-only; no outbound OCPP command.</small>
                 </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-stop", "Remote stop transaction", `Stop the active simulated transaction for ${selectedStationName}.`)}>
-                  <strong>Remote stop simulation</strong>
-                  <small>Stop the controlled test transaction.</small>
+                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", `Record a simulated stop audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
+                  <strong>Record simulated stop</strong>
+                  <small>Audit-only; no outbound OCPP command.</small>
                 </button>
                 <button type="button" className="ghost-button action-button" onClick={() => navigateView("activity")}>
                   <strong>Open activity log</strong>
@@ -1254,9 +1250,10 @@ export default function Page() {
                   <button type="button" className="ghost-button" onClick={runScenario}>
                     Run simulation
                   </button>
-                  <button type="button" className="danger-button" onClick={() => postAction("/api/admin/simulator/remote-stop", "Stop simulation")}>
-                    Stop simulation
+                  <button type="button" className="danger-button" onClick={() => postAction("/api/admin/simulator/remote-stop", "Simulated stop audit recorded")}>
+                    Record stop audit
                   </button>
+                  <small>This records an admin audit event only; it does not interrupt a running scenario.</small>
                 </div>
                 <div className="timeline simulator-timeline">
                   {simulatorMessages.map((entry, index) => (
@@ -1344,13 +1341,13 @@ export default function Page() {
             </div>
             <div className="admin-desktop-grid">
               <div className="admin-actions">
-                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-start", "Remote start simulation", "This starts a controlled simulator transaction. It creates demo traffic across ingestion, sessions, messages, and outbox processing; use it when you want to verify the pipeline.")}>
-                  <strong>Start simulator transaction</strong>
-                  <small>Creates a controlled charging flow.</small>
+                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStartTransaction.")}>
+                  <strong>Record simulated start</strong>
+                  <small>Audit-only simulator action.</small>
                 </button>
-                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-stop", "Remote stop simulation", "This stops the active simulator transaction and closes the session path. Use it when a demo run should end cleanly.")}>
-                  <strong>Stop simulator transaction</strong>
-                  <small>Ends the controlled charging flow.</small>
+                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStopTransaction.")}>
+                  <strong>Record simulated stop</strong>
+                  <small>Audit-only simulator action.</small>
                 </button>
                 <button type="button" className="ghost-button action-button" onClick={() => selectedOutboxId && confirmAndPost(`/api/admin/outbox/${selectedOutboxId}/retry`, "Retry failed outbox", `This requeues outbox item ${shortId(selectedOutboxId)} for delivery. Use it after fixing the cause of a failed webhook or downstream delivery.`)}>
                   <strong>Retry failed outbox item</strong>

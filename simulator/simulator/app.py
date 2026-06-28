@@ -73,14 +73,46 @@ async def scenarios() -> dict[str, list[str]]:
     }
 
 
-async def send_frame(ws, frame: list[Any]) -> None:
+async def send_frame(ws, frame: list[Any]) -> list[Any]:
     payload = json.dumps(frame)
     await ws.send(payload)
     STATE.last_message = payload
     STATE.messages.append({"direction": "outbound", "payload": frame, "timestamp": datetime.now(UTC).isoformat()})
-    response = await ws.recv()
-    STATE.messages.append({"direction": "inbound", "payload": response, "timestamp": datetime.now(UTC).isoformat()})
-    STATE.last_message = response
+    response_text = await ws.recv()
+    STATE.messages.append({"direction": "inbound", "payload": response_text, "timestamp": datetime.now(UTC).isoformat()})
+    STATE.last_message = response_text
+    response = json.loads(response_text)
+    if not isinstance(response, list) or len(response) < 3:
+        raise RuntimeError("Backend returned a malformed OCPP response")
+    if response[1] != frame[1]:
+        raise RuntimeError(f"Backend response correlation mismatch: expected {frame[1]}, received {response[1]}")
+    if response[0] == 4:
+        raise RuntimeError(f"Backend rejected {frame[2]}: {response[2]}")
+    if response[0] != 3:
+        raise RuntimeError(f"Backend returned unsupported OCPP message type {response[0]}")
+    return response
+
+
+async def start_transaction(ws, connector_id: int, meter_start: int) -> int:
+    message_id = str(uuid4())
+    response = await send_frame(
+        ws,
+        [
+            2,
+            message_id,
+            "StartTransaction",
+            {
+                "connectorId": connector_id,
+                "idTag": "DEMO-TAG",
+                "meterStart": meter_start,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        ],
+    )
+    response_payload = response[2]
+    if not isinstance(response_payload, dict) or not isinstance(response_payload.get("transactionId"), int):
+        raise RuntimeError("StartTransaction response did not contain a central-system transactionId")
+    return response_payload["transactionId"]
 
 
 def scenario_delay(speed: str) -> float:
@@ -109,15 +141,7 @@ async def run_happy_path(ws, station_id: str, connector_id: int, speed: str) -> 
         ],
     )
     await pause(speed)
-    await send_frame(
-        ws,
-        [
-            2,
-            str(uuid4()),
-            "StartTransaction",
-            {"connectorId": connector_id, "idTag": "DEMO-TAG", "meterStart": 12345, "transactionId": 9001},
-        ],
-    )
+    transaction_id = await start_transaction(ws, connector_id, 12345)
     await pause(speed)
     await send_frame(
         ws,
@@ -126,7 +150,7 @@ async def run_happy_path(ws, station_id: str, connector_id: int, speed: str) -> 
             str(uuid4()),
             "MeterValues",
             {
-                "transactionId": 9001,
+                "transactionId": transaction_id,
                 "connectorId": connector_id,
                 "meterValue": [
                     {
@@ -144,22 +168,18 @@ async def run_happy_path(ws, station_id: str, connector_id: int, speed: str) -> 
             2,
             str(uuid4()),
             "StopTransaction",
-            {"transactionId": 9001, "meterStop": 12410, "reason": "Local"},
+            {
+                "transactionId": transaction_id,
+                "meterStop": 12410,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "reason": "Local",
+            },
         ],
     )
 
 
 async def run_duplicate_meter(ws, connector_id: int, speed: str) -> None:
-    transaction_id = 9901
-    await send_frame(
-        ws,
-        [
-            2,
-            str(uuid4()),
-            "StartTransaction",
-            {"connectorId": connector_id, "idTag": "DEMO-TAG", "meterStart": 12345, "transactionId": transaction_id},
-        ],
-    )
+    transaction_id = await start_transaction(ws, connector_id, 12345)
     await pause(speed)
     meter_message_id = str(uuid4())
     meter_frame = [
@@ -183,9 +203,25 @@ async def run_duplicate_meter(ws, connector_id: int, speed: str) -> None:
 
 
 async def run_station_offline_online(ws, connector_id: int, speed: str) -> None:
-    await send_frame(ws, [2, str(uuid4()), "StatusNotification", {"connectorId": connector_id, "status": "Unavailable"}])
+    await send_frame(
+        ws,
+        [
+            2,
+            str(uuid4()),
+            "StatusNotification",
+            {"connectorId": connector_id, "status": "Unavailable", "errorCode": "NoError"},
+        ],
+    )
     await pause(speed)
-    await send_frame(ws, [2, str(uuid4()), "StatusNotification", {"connectorId": connector_id, "status": "Available"}])
+    await send_frame(
+        ws,
+        [
+            2,
+            str(uuid4()),
+            "StatusNotification",
+            {"connectorId": connector_id, "status": "Available", "errorCode": "NoError"},
+        ],
+    )
 
 
 async def run_connector_fault(ws, connector_id: int) -> None:
@@ -193,17 +229,17 @@ async def run_connector_fault(ws, connector_id: int) -> None:
 
 
 async def run_interrupted_session(ws, connector_id: int, speed: str) -> None:
+    await start_transaction(ws, connector_id, 20000)
+    await pause(speed)
     await send_frame(
         ws,
         [
             2,
             str(uuid4()),
-            "StartTransaction",
-            {"connectorId": connector_id, "idTag": "DEMO-TAG", "meterStart": 20000, "transactionId": 9902},
+            "StatusNotification",
+            {"connectorId": connector_id, "status": "SuspendedEVSE", "errorCode": "NoError"},
         ],
     )
-    await pause(speed)
-    await send_frame(ws, [2, str(uuid4()), "StatusNotification", {"connectorId": connector_id, "status": "SuspendedEVSE"}])
 
 
 async def post_partner_webhook(station_id: str, event_id: str, signature_override: str | None = None) -> httpx.Response:

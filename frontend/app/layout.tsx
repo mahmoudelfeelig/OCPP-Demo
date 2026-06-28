@@ -7,9 +7,9 @@ export const metadata: Metadata = {
   title: "OCPP-Demo",
   description: "Operations dashboard for OCPP lifecycle demo",
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/assets/brand/elephant-logo.ico",
+    shortcut: "/assets/brand/elephant-logo.ico",
+    apple: "/assets/brand/elephant-logo.png",
   },
 };
 

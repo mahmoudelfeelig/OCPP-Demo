@@ -47,6 +47,9 @@
 - [x] Create an outbox row in the same database transaction.
 - [x] Enforce unique OCPP message IDs.
 - [x] Return OCPP CALLRESULT or CALLERROR frames.
+- [x] Preserve a parseable CALL message ID in CALLERROR responses.
+- [x] Assign the OCPP transaction ID in the StartTransaction CALLRESULT and reuse it in later charger messages.
+- [x] Validate required fields and non-empty MeterValues arrays for supported actions.
 - [x] Add protocol-level tests for malformed arrays and unsupported message types.
 - [x] Add a documented OCPP message transcript for the demo happy path.
 
@@ -75,6 +78,7 @@
 - [x] Add integration tests with two workers racing for the same outbox row.
 - [x] Add dead-letter acknowledgement semantics that preserve the original terminal failure state.
 - [x] Add stale `processing` lock recovery.
+- [x] Document the outbox as durable worker scaffolding without downstream fanout or command dispatch.
 
 # Authentication And Roles
 - [x] Use JWT authentication.
@@ -113,6 +117,7 @@
 - [x] Add scenario speed handling.
 - [x] Add simulator integration tests against the real backend container.
 - [x] Add clear UI feedback when simulator WebSocket connection fails.
+- [x] Label simulated start/stop admin controls as audit-only rather than outbound OCPP commands.
 
 # Frontend Operations UI
 - [x] Use Next.js and React.
@@ -137,6 +142,7 @@
 - [x] Add OpenTelemetry collector config for local logs/collector output.
 - [x] Add metrics counters/gauges for key operational signals.
 - [x] Show health, readiness, worker, cache, retry, and failure summaries in the UI.
+- [x] Document Redis as limited station-snapshot and worker-heartbeat infrastructure; PostgreSQL remains the dashboard read source.
 - [x] Confirm traces are emitted for API requests in the running stack.
 - [ ] Confirm traces are emitted for OCPP ingestion, outbox processing, and partner webhooks in the running stack.
 - [x] Add a documented log query cheat sheet for the interview demo.

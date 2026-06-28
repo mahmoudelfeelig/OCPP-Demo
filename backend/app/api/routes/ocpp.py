@@ -6,7 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from opentelemetry import trace
 
 from app.db.session import SessionLocal
-from app.services.ingestion import ingest_ocpp_message
+from app.services.ingestion import extract_ocpp_message_id, ingest_ocpp_message
 
 router = APIRouter()
 tracer = trace.get_tracer(__name__)
@@ -28,7 +28,8 @@ async def ocpp_socket(websocket: WebSocket, station_id: str) -> None:
                 except Exception as exc:  # noqa: BLE001
                     db.rollback()
                     span.record_exception(exc)
-                    await websocket.send_text(json.dumps([4, "unknown", "FormationViolation", str(exc), {}]))
+                    message_id = extract_ocpp_message_id(message) or "unknown"
+                    await websocket.send_text(json.dumps([4, message_id, "FormationViolation", str(exc), {}]))
     except WebSocketDisconnect:
         return
     finally:
