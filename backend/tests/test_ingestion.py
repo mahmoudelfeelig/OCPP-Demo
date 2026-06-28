@@ -20,6 +20,7 @@ from app.models.entities import (
     StationState,
     Transaction,
     TransactionState,
+    OcppMessage,
 )
 from app.services.outbox import process_outbox_event
 from app.services.ingestion import extract_ocpp_message_id, ingest_ocpp_message
@@ -41,6 +42,26 @@ def test_ocpp_message_ingestion_is_idempotent(db_session) -> None:
 
     assert first["duplicate"] is False
     assert second["duplicate"] is True
+
+
+def test_ocpp_message_ids_are_scoped_to_station(db_session) -> None:
+    site = Site(slug="message-scope", label="Message Scope")
+    db_session.add(site)
+    db_session.flush()
+    stations = [
+        Station(site_id=site.id, external_id="SCOPE-1", label="Scope 1"),
+        Station(site_id=site.id, external_id="SCOPE-2", label="Scope 2"),
+    ]
+    db_session.add_all(stations)
+    db_session.commit()
+    message = '[2,"shared-message","Heartbeat",{}]'
+
+    first = ingest_ocpp_message(db_session, stations[0].id, message)
+    second = ingest_ocpp_message(db_session, stations[1].id, message)
+
+    assert first["duplicate"] is False
+    assert second["duplicate"] is False
+    assert db_session.query(OcppMessage).count() == 2
 
 
 def test_ocpp_ingestion_records_state_history(db_session) -> None:
@@ -200,6 +221,87 @@ def test_duplicate_meter_value_payload_is_idempotent(db_session) -> None:
 
     assert len(meter_values) == 1
     assert len(duplicate_events) == 1
+
+
+def test_meter_values_store_every_timestamp_and_sample(db_session) -> None:
+    site = Site(slug="meter-batch", label="Meter Batch")
+    db_session.add(site)
+    db_session.flush()
+    station = Station(site_id=site.id, external_id="ST-BATCH", label="Station Batch", state="online", online=True)
+    db_session.add(station)
+    db_session.flush()
+    db_session.add(Connector(station_id=station.id, connector_number=1, state="available"))
+    db_session.commit()
+    start = ingest_ocpp_message(
+        db_session,
+        station.id,
+        '[2,"start-batch","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
+    )
+    transaction_id = start["response_payload"]["transactionId"]
+    payload = {
+        "transactionId": transaction_id,
+        "connectorId": 1,
+        "meterValue": [
+            {
+                "timestamp": "2026-06-26T12:01:00Z",
+                "sampledValue": [
+                    {"value": "1.5", "unit": "kWh", "measurand": "Energy.Active.Import.Register"},
+                    {"value": "7.2", "unit": "kW", "measurand": "Power.Active.Import"},
+                ],
+            },
+            {
+                "timestamp": "2026-06-26T12:02:00Z",
+                "sampledValue": [
+                    {"value": "1.7", "unit": "kWh", "measurand": "Energy.Active.Import.Register"},
+                ],
+            },
+        ],
+    }
+
+    ingest_ocpp_message(
+        db_session,
+        station.id,
+        json.dumps([2, "meter-batch", "MeterValues", payload]),
+    )
+
+    values = list(db_session.scalars(select(MeterValue).order_by(MeterValue.sampled_at, MeterValue.measurand)))
+    assert len(values) == 3
+    assert {value.measurand for value in values} == {
+        "Energy.Active.Import.Register",
+        "Power.Active.Import",
+    }
+
+
+def test_new_faulted_connector_does_not_interrupt_unassigned_session(db_session) -> None:
+    site = Site(slug="new-connector", label="New Connector")
+    db_session.add(site)
+    db_session.flush()
+    station = Station(site_id=site.id, external_id="ST-NEW", label="Station New")
+    db_session.add(station)
+    db_session.flush()
+    unassigned = ChargingSession(
+        site_id=site.id,
+        station_id=station.id,
+        connector_id=None,
+        external_session_id="unassigned-session",
+        state=SessionState.ACTIVE.value,
+        transaction_state=TransactionState.OPEN.value,
+    )
+    db_session.add(unassigned)
+    db_session.commit()
+
+    ingest_ocpp_message(
+        db_session,
+        station.id,
+        '[2,"new-fault","StatusNotification",{"connectorId":2,"status":"Faulted","errorCode":"GroundFailure"}]',
+    )
+
+    db_session.refresh(unassigned)
+    connector = db_session.scalar(select(Connector).where(Connector.connector_number == 2))
+    history = list(db_session.scalars(select(AuditEvent).where(AuditEvent.entity_type == "connector")))
+    assert connector is not None
+    assert unassigned.state == SessionState.ACTIVE.value
+    assert any(event.entity_id == connector.id for event in history)
 
 
 def test_ocpp_happy_path_lifecycle(db_session) -> None:

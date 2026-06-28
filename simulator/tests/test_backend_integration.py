@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
 from uuid import uuid4
 
@@ -17,8 +18,19 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.asyncio
 async def test_happy_path_boot_notification_against_backend_container() -> None:
     url = os.environ["OCPP_BACKEND_WS_URL"]
+    station_id = url.rstrip("/").rsplit("/", 1)[-1]
+    station_tokens = json.loads(os.environ["OCPP_STATION_TOKENS"])
+    token = station_tokens[station_id]
+    header_parameter = (
+        "additional_headers"
+        if "additional_headers" in inspect.signature(websockets.connect).parameters
+        else "extra_headers"
+    )
     message_id = str(uuid4())
-    async with websockets.connect(url) as ws:
+    async with websockets.connect(
+        url,
+        **{header_parameter: {"Authorization": f"Bearer {token}"}},
+    ) as ws:
         await ws.send(json.dumps([2, message_id, "BootNotification", {"chargePointVendor": "OCPP-Demo", "chargePointModel": "Integration"}]))
         response = json.loads(await ws.recv())
 

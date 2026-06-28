@@ -124,6 +124,12 @@ type ReadyState = {
 
 type ListResponse<T> = {
   items?: T[];
+  meta?: {
+    limit: number;
+    offset: number;
+    count: number;
+    total: number;
+  };
 };
 
 type AuthProfile = {
@@ -269,11 +275,44 @@ async function requestJson<T = JsonRecord>(path: string, init: RequestInit = {},
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    throw new ApiError(data?.detail ?? data?.message ?? response.statusText, response.status);
+  let data: JsonRecord | null = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as JsonRecord;
+    } catch {
+      throw new ApiError(
+        response.ok ? "The server returned an invalid response." : text.slice(0, 200),
+        response.status,
+      );
+    }
   }
-  return data;
+  if (!response.ok) {
+    const detail = data?.detail ?? data?.message;
+    throw new ApiError(typeof detail === "string" ? detail : response.statusText, response.status);
+  }
+  return data as T;
+}
+
+async function requestAllPages<T>(path: string, token: string): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+  const limit = 200;
+
+  while (true) {
+    const separator = path.includes("?") ? "&" : "?";
+    const page = await requestJson<ListResponse<T>>(
+      `${path}${separator}limit=${limit}&offset=${offset}`,
+      {},
+      token,
+    );
+    const pageItems = page.items ?? [];
+    items.push(...pageItems);
+    const total = page.meta?.total ?? items.length;
+    if (!pageItems.length || items.length >= total) break;
+    offset += pageItems.length;
+  }
+
+  return items;
 }
 
 function formatTime(value: string | null | undefined) {
@@ -388,6 +427,7 @@ function ElephantLogo({ className = "" }: { className?: string }) {
       height={256}
       alt="OCPP-Demo elephant logo"
       priority
+      unoptimized
     />
   );
 }
@@ -587,6 +627,7 @@ export default function Page() {
   const [transactionDetail, setTransactionDetail] = useState<DetailItem<TransactionDetailItem>>({ item: null });
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [newUser, setNewUser] = useState<{ email: string; password: string; role: RoleName; display_name: string }>({ email: "", password: "", role: "operator", display_name: "" });
+  const [newStationToken, setNewStationToken] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -620,44 +661,52 @@ export default function Page() {
       outbox,
       webhooks,
       users,
-      healthInfo,
-      readyInfo,
-      statusInfo,
-      scenariosInfo,
-      simulatorInfo,
     ] = await Promise.all([
-      requestJson<ListResponse<SiteItem>>("/api/sites", {}, accessToken),
-      requestJson<ListResponse<StationItem>>("/api/stations", {}, accessToken),
-      requestJson<ListResponse<SessionItem>>("/api/sessions", {}, accessToken),
-      requestJson<ListResponse<TransactionItem>>("/api/transactions", {}, accessToken),
-      requestJson<ListResponse<EventItem>>("/api/events", {}, accessToken),
-      requestJson<ListResponse<MessageItem>>("/api/messages", {}, accessToken),
-      requestJson<ListResponse<OutboxItem>>("/api/outbox", {}, accessToken),
-      requestJson<ListResponse<WebhookItem>>("/api/webhooks", {}, accessToken),
+      requestAllPages<SiteItem>("/api/sites", accessToken),
+      requestAllPages<StationItem>("/api/stations", accessToken),
+      requestAllPages<SessionItem>("/api/sessions", accessToken),
+      requestAllPages<TransactionItem>("/api/transactions", accessToken),
+      requestAllPages<EventItem>("/api/events", accessToken),
+      requestAllPages<MessageItem>("/api/messages", accessToken),
+      requestAllPages<OutboxItem>("/api/outbox", accessToken),
+      requestAllPages<WebhookItem>("/api/webhooks", accessToken),
       role === "admin" ? requestJson<UserItem[]>("/api/admin/users", {}, accessToken) : Promise.resolve([] as UserItem[]),
-      requestJson<HealthState>("/api/health"),
-      requestJson<ReadyState>("/api/ready"),
-      requestJson<SystemStatus>("/api/metrics/status"),
-      requestJson<{ scenarios?: string[] }>("/simulator/scenarios"),
-      requestJson<JsonRecord>("/simulator/state"),
     ]);
 
     setState({
-      sites: sites.items ?? [],
-      stations: stations.items ?? [],
-      sessions: sessions.items ?? [],
-      transactions: transactions.items ?? [],
-      events: events.items ?? [],
-      messages: messages.items ?? [],
-      outbox: outbox.items ?? [],
-      webhooks: webhooks.items ?? [],
+      sites,
+      stations,
+      sessions,
+      transactions,
+      events,
+      messages,
+      outbox,
+      webhooks,
       users: Array.isArray(users) ? users : [],
-      scenarios: scenariosInfo.scenarios?.length ? scenariosInfo.scenarios : predefinedScenarios,
-      simulatorState: simulatorInfo,
-      systemStatus: statusInfo,
+      scenarios: predefinedScenarios,
+      simulatorState: null,
+      systemStatus: null,
     });
-    setHealth(healthInfo);
-    setReady(readyInfo);
+
+    const [healthResult, readyResult, statusResult, scenariosResult, simulatorResult] = await Promise.allSettled([
+      requestJson<HealthState>("/api/health"),
+      requestJson<ReadyState>("/api/ready"),
+      requestJson<SystemStatus>("/api/metrics/status"),
+      requestJson<{ scenarios?: string[] }>("/simulator/scenarios", {}, accessToken),
+      requestJson<JsonRecord>("/simulator/state", {}, accessToken),
+    ]);
+    if (healthResult.status === "fulfilled") setHealth(healthResult.value);
+    if (readyResult.status === "fulfilled") setReady(readyResult.value);
+    setState((current) => ({
+      ...current,
+      systemStatus: statusResult.status === "fulfilled" ? statusResult.value : current.systemStatus,
+      scenarios:
+        scenariosResult.status === "fulfilled" && scenariosResult.value.scenarios?.length
+          ? scenariosResult.value.scenarios
+          : current.scenarios,
+      simulatorState:
+        simulatorResult.status === "fulfilled" ? simulatorResult.value : current.simulatorState,
+    }));
     setActionError(null);
   }
 
@@ -674,7 +723,12 @@ export default function Page() {
     requestJson<AuthProfile>("/api/auth/me", {}, storedToken)
       .then(async (profile) => {
         setUser(profile);
-        await loadDashboard(storedToken, profile.role);
+        try {
+          await loadDashboard(storedToken, profile.role);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) clearSession();
+          else setActionError(err instanceof Error ? err.message : "Dashboard data is temporarily unavailable.");
+        }
       })
       .catch(() => {
         clearSession();
@@ -780,11 +834,11 @@ export default function Page() {
               method: "POST",
               body: JSON.stringify({ email, password }),
             });
+            const profile = await requestJson<AuthProfile>("/api/auth/me", {}, result.access_token);
+            await loadDashboard(result.access_token, profile.role);
             window.localStorage.setItem("ocpp-token", result.access_token);
             setToken(result.access_token);
-            const profile = await requestJson<AuthProfile>("/api/auth/me", {}, result.access_token);
             setUser(profile);
-            await loadDashboard(result.access_token, profile.role);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Login failed");
           } finally {
@@ -859,7 +913,7 @@ export default function Page() {
   async function runScenario() {
     const body = {
       site_id: selectedSite?.id ?? null,
-      station_id: selectedStation?.id ?? null,
+      station_id: selectedStation?.external_id ?? null,
       connector_id: selectedConnector?.connector_number ? String(selectedConnector.connector_number) : null,
       speed: scenarioSpeed,
     };
@@ -1422,6 +1476,47 @@ export default function Page() {
                   </button>
                   <button type="button" className="ghost-button user-form-wide" disabled title="Rotate the partner webhook secret by updating deploy/.env and restarting the stack.">
                     Rotate webhook secret
+                  </button>
+                </div>
+                <div className="user-form">
+                  <GlassSelect
+                    label="Station token"
+                    value={selectedStationId ?? ""}
+                    options={state.stations.map((station) => ({
+                      value: station.id,
+                      label: station.label,
+                      description: station.external_id,
+                    }))}
+                    open={openSelect === "station-token"}
+                    onOpen={() => setOpenSelect(openSelect === "station-token" ? null : "station-token")}
+                    onChange={(value) => {
+                      setSelectedStationId(value);
+                      setOpenSelect(null);
+                    }}
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="New station token (32+ characters)"
+                    value={newStationToken}
+                    onChange={(event) => setNewStationToken(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={!selectedStation || newStationToken.length < 32}
+                    onClick={() => {
+                      if (!selectedStation) return;
+                      confirmAndPost(
+                        `/api/admin/stations/${selectedStation.id}/token`,
+                        "Rotate station token",
+                        `Replace the OCPP token for ${selectedStation.label}. The station must use the new token on its next connection.`,
+                        { token: newStationToken },
+                      );
+                      setNewStationToken("");
+                    }}
+                  >
+                    Rotate station token
                   </button>
                 </div>
               </div>

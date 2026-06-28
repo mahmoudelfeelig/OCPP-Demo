@@ -63,8 +63,9 @@ def test_two_workers_do_not_claim_same_outbox_row(postgres_session_factory) -> N
     worker_one = postgres_session_factory()
     worker_two = postgres_session_factory()
     try:
-        first_claim = OutboxRepository(worker_one).list_due(limit=1)
-        second_claim = OutboxRepository(worker_two).list_due(limit=1)
+        first_claim = OutboxRepository(worker_one).claim_due("worker-one", limit=1)
+        worker_one.commit()
+        second_claim = OutboxRepository(worker_two).claim_due("worker-two", limit=1)
 
         assert len(first_claim) == 1
         assert second_claim == []

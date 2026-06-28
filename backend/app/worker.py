@@ -33,9 +33,10 @@ async def run_worker() -> None:
             if recovered_count:
                 db.commit()
                 logger.info("outbox_stale_locks_recovered", worker_id=worker_id, count=recovered_count)
-            for event in repo.list_due(limit=10):
-                repo.lock(event, worker_id=worker_id)
+            claimed_events = repo.claim_due(worker_id=worker_id, limit=10)
+            if claimed_events:
                 db.commit()
+            for event in claimed_events:
                 result = process_outbox_event(db, event)
                 logger.info("outbox_processed", worker_id=worker_id, event_id=result.event_id, status=result.status)
         finally:

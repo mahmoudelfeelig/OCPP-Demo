@@ -93,6 +93,7 @@ async def test_dashboard_endpoints_return_typed_item_envelopes(api_db) -> None:
             assert payload["meta"]["limit"] <= 200
             assert payload["meta"]["offset"] == 0
             assert payload["meta"]["count"] == len(payload["items"])
+            assert payload["meta"]["total"] >= payload["meta"]["count"]
 
         station_id = (await client.get("/stations", headers=headers)).json()["items"][0]["id"]
         response = await client.get(f"/stations/{station_id}/connectors?state=available", headers=headers)
@@ -144,6 +145,13 @@ async def test_admin_can_use_recovery_and_maintenance_actions(api_db) -> None:
         assert (await client.post(f"/admin/stations/{station['id']}/maintenance", json={"enabled": True}, headers=headers)).status_code == 200
         assert (await client.post(f"/admin/connectors/{connector['id']}/unavailable", headers=headers)).status_code == 200
         assert (await client.post(f"/admin/connectors/{connector['id']}/available", headers=headers)).status_code == 200
+        assert (
+            await client.post(
+                f"/admin/stations/{station['id']}/token",
+                json={"token": "new-station-token-with-at-least-32-characters"},
+                headers=headers,
+            )
+        ).status_code == 200
         assert (await client.post(f"/admin/outbox/{failed['id']}/retry", headers=headers)).status_code == 200
         assert (await client.post(f"/admin/outbox/{dead_letter['id']}/ack", headers=headers)).status_code == 200
 
@@ -158,6 +166,7 @@ async def test_admin_actions_return_404_for_missing_entities(api_db) -> None:
             ("/admin/outbox/missing/retry", None),
             ("/admin/outbox/missing/ack", None),
             ("/admin/stations/missing/maintenance", {"enabled": True}),
+            ("/admin/stations/missing/token", {"token": "new-station-token-with-at-least-32-characters"}),
             ("/admin/connectors/missing/available", None),
             ("/admin/connectors/missing/unavailable", None),
             ("/admin/users/missing/role", {"role": "operator"}),
@@ -168,3 +177,21 @@ async def test_admin_actions_return_404_for_missing_entities(api_db) -> None:
         for path, payload in requests:
             response = await client.post(path, json=payload, headers=headers)
             assert response.status_code == 404, path
+
+
+@pytest.mark.asyncio
+async def test_last_active_admin_cannot_be_demoted(api_db) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        token = token_for(api_db, "admin@test.local")
+        headers = {"Authorization": f"Bearer {token}"}
+        users = (await client.get("/admin/users", headers=headers)).json()
+        admin_user = next(user for user in users if user["role"] == "admin")
+
+        response = await client.post(
+            f"/admin/users/{admin_user['id']}/role",
+            json={"role": "operator"},
+            headers=headers,
+        )
+
+    assert response.status_code == 409

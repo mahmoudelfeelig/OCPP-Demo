@@ -45,7 +45,8 @@
 - [x] Support `StopTransaction`.
 - [x] Persist raw inbound OCPP messages.
 - [x] Create an outbox row in the same database transaction.
-- [x] Enforce unique OCPP message IDs.
+- [x] Enforce unique OCPP message IDs per station.
+- [x] Authenticate OCPP WebSocket connections with per-station bearer tokens.
 - [x] Return OCPP CALLRESULT or CALLERROR frames.
 - [x] Preserve a parseable CALL message ID in CALLERROR responses.
 - [x] Assign the OCPP transaction ID in the StartTransaction CALLRESULT and reuse it in later charger messages.
@@ -105,7 +106,7 @@
 
 # Simulator
 - [x] Add a separate Python simulator service.
-- [x] Expose simulator health, state, scenario list, and run endpoint.
+- [x] Expose simulator health plus authenticated state, scenario list, and run endpoints.
 - [x] Add happy-path charging session scenario.
 - [x] Add duplicate meter value scenario.
 - [x] Add station offline/online scenario.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,29 @@ class Settings(BaseSettings):
     partner_webhook_secret: str = Field(default="change-me")
     admin_bootstrap_email: str | None = Field(default=None)
     admin_bootstrap_password: str | None = Field(default=None)
+    ocpp_station_tokens: str | None = Field(default=None)
+
+    def station_tokens(self) -> dict[str, str]:
+        if not self.ocpp_station_tokens:
+            return {}
+        parsed = json.loads(self.ocpp_station_tokens)
+        if not isinstance(parsed, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in parsed.items()
+        ):
+            raise ValueError("OCPP_STATION_TOKENS must be a JSON object of station identifiers to tokens")
+        return parsed
+
+
+def validate_production_settings(settings: Settings) -> None:
+    if settings.app_env != "production":
+        return
+    insecure = []
+    if settings.jwt_secret == "change-me" or len(settings.jwt_secret) < 32:
+        insecure.append("JWT_SECRET")
+    if settings.partner_webhook_secret == "change-me" or len(settings.partner_webhook_secret) < 32:
+        insecure.append("PARTNER_WEBHOOK_SECRET")
+    if insecure:
+        raise RuntimeError(f"Production secrets must be changed and contain at least 32 characters: {', '.join(insecure)}")
 
 
 @lru_cache

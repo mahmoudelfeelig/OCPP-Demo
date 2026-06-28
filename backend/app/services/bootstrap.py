@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.security import hash_password
-from app.models.entities import Role, User
+from app.core.security import hash_password, hash_station_token
+from app.models.entities import Role, Station, User
 
 logger = logging.getLogger(__name__)
 
@@ -49,3 +49,31 @@ def bootstrap_admin_user(db: Session, settings: Settings) -> None:
     )
     db.commit()
     logger.info("bootstrapped admin user", extra={"email": email})
+
+
+def configure_station_tokens(db: Session, settings: Settings) -> None:
+    configured = settings.station_tokens()
+    if not configured:
+        return
+
+    for station_ref, token in configured.items():
+        if len(token) < 32:
+            raise RuntimeError(f"OCPP token for station {station_ref} must contain at least 32 characters")
+        station = db.get(Station, station_ref)
+        if station is None:
+            matches = list(db.scalars(select(Station).where(Station.external_id == station_ref)))
+            if len(matches) > 1:
+                raise RuntimeError(f"OCPP station identifier is ambiguous: {station_ref}")
+            station = matches[0] if matches else None
+        if station is None:
+            logger.warning("station token references an unknown station", extra={"station_ref": station_ref})
+            continue
+        configured_hash = hash_station_token(token)
+        if station.ocpp_token_hash is None:
+            station.ocpp_token_hash = configured_hash
+        elif station.ocpp_token_hash != configured_hash:
+            logger.warning(
+                "station token differs from environment; keeping the database value",
+                extra={"station_ref": station_ref},
+            )
+    db.commit()

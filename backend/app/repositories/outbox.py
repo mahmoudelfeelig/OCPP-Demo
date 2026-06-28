@@ -33,6 +33,12 @@ class OutboxRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def claim_due(self, worker_id: str, limit: int = 25) -> list[OutboxEvent]:
+        events = self.list_due(limit=limit)
+        for event in events:
+            self.lock(event, worker_id)
+        return events
+
     def recover_stale_processing(self, older_than_seconds: int = 300) -> int:
         stale_before = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
         result = self.db.execute(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -9,10 +10,12 @@ from uuid import uuid4
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 app = FastAPI(title="ocpp-backend-demo simulator", version="0.1.0")
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class ScenarioRequest(BaseModel):
@@ -52,13 +55,34 @@ def state_payload() -> dict[str, Any]:
     }
 
 
+async def require_authenticated_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    from os import getenv
+
+    backend_url = getenv("BACKEND_INTERNAL_URL", "http://backend:8000")
+    async with httpx.AsyncClient(base_url=backend_url, timeout=5.0) as client:
+        response = await client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {credentials.credentials}"},
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive user")
+    profile = response.json()
+    if profile.get("role") not in {"admin", "operator"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return profile
+
+
 @app.get("/state")
-async def state() -> dict[str, Any]:
+async def state(_user: dict[str, str] = Depends(require_authenticated_user)) -> dict[str, Any]:
     return state_payload()
 
 
 @app.get("/scenarios")
-async def scenarios() -> dict[str, list[str]]:
+async def scenarios(_user: dict[str, str] = Depends(require_authenticated_user)) -> dict[str, list[str]]:
     return {
         "scenarios": [
             "happy-path-charging-session",
@@ -297,8 +321,26 @@ async def connect_and_run(scenario: str, request: ScenarioRequest) -> dict[str, 
     STATE.scenario = scenario
     STATE.station_id = station_id
     STATE.websocket_url = websocket_url
+    from os import getenv
+
+    raw_tokens = getenv("OCPP_STATION_TOKENS", "")
     try:
-        async with websockets.connect(websocket_url) as ws:
+        configured_tokens = json.loads(raw_tokens) if raw_tokens else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="OCPP_STATION_TOKENS is not valid JSON") from exc
+    station_token = configured_tokens.get(station_id) if isinstance(configured_tokens, dict) else None
+    if not isinstance(station_token, str) or len(station_token) < 32:
+        raise HTTPException(status_code=409, detail=f"No simulator token configured for station {station_id}")
+    header_parameter = (
+        "additional_headers"
+        if "additional_headers" in inspect.signature(websockets.connect).parameters
+        else "extra_headers"
+    )
+    try:
+        async with websockets.connect(
+            websocket_url,
+            **{header_parameter: {"Authorization": f"Bearer {station_token}"}},
+        ) as ws:
             STATE.connected = True
             if scenario == "happy-path-charging-session":
                 await run_happy_path(ws, station_id, connector_id, request.speed)
@@ -325,5 +367,9 @@ async def connect_and_run(scenario: str, request: ScenarioRequest) -> dict[str, 
 
 
 @app.post("/run/{scenario_name}")
-async def run_scenario(scenario_name: str, request: ScenarioRequest) -> dict[str, Any]:
+async def run_scenario(
+    scenario_name: str,
+    request: ScenarioRequest,
+    _user: dict[str, str] = Depends(require_authenticated_user),
+) -> dict[str, Any]:
     return await connect_and_run(scenario_name, request)

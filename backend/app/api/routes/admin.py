@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, require_role
 from app.db.session import get_db
-from app.core.security import hash_password
+from app.core.security import hash_password, hash_station_token
 from app.models.entities import AuditEvent, Connector, ConnectorState, OutboxEvent, OutboxStatus, Role, Station, User
 from app.repositories.outbox import OutboxRepository
 
@@ -36,15 +36,18 @@ class UserResponse(BaseModel):
     last_login_at: str | None = None
 
 
-def active_admin_count(db: Session) -> int:
-    return (
-        db.scalar(
-            select(func.count())
-            .select_from(User)
+class StationTokenRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+def lock_active_admins(db: Session) -> list[User]:
+    return list(
+        db.scalars(
+            select(User)
             .join(Role)
             .where(User.is_active.is_(True), Role.name == "admin")
+            .with_for_update(of=User)
         )
-        or 0
     )
 
 
@@ -218,8 +221,9 @@ async def update_user_role(
     role = db.scalar(select(Role).where(Role.name == payload.get("role", "operator")))
     if role is None:
         raise HTTPException(status_code=400, detail="Unknown role")
-    if user.role.name == "admin" and role.name != "admin" and user.is_active and active_admin_count(db) <= 1:
-        raise HTTPException(status_code=409, detail="Cannot demote the last active admin")
+    if user.role.name == "admin" and role.name != "admin" and user.is_active:
+        if len(lock_active_admins(db)) <= 1:
+            raise HTTPException(status_code=409, detail="Cannot demote the last active admin")
     user.role_id = role.id
     db.add(
         AuditEvent(
@@ -245,8 +249,9 @@ async def deactivate_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.role.name == "admin" and user.is_active and active_admin_count(db) <= 1:
-        raise HTTPException(status_code=409, detail="Cannot remove the last active admin")
+    if user.role.name == "admin" and user.is_active:
+        if len(lock_active_admins(db)) <= 1:
+            raise HTTPException(status_code=409, detail="Cannot remove the last active admin")
     user.is_active = False
     db.add(
         AuditEvent(
@@ -306,6 +311,30 @@ async def toggle_station_maintenance(
     )
     db.commit()
     return AdminActionResponse(status="accepted", action=f"station_maintenance:{station_id}")
+
+
+@router.post("/stations/{station_id}/token", response_model=AdminActionResponse)
+async def rotate_station_token(
+    station_id: str,
+    payload: StationTokenRequest,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> AdminActionResponse:
+    station = db.get(Station, station_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    station.ocpp_token_hash = hash_station_token(payload.token)
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="rotate_station_token",
+            entity_type="station",
+            entity_id=station.id,
+            payload={},
+        )
+    )
+    db.commit()
+    return AdminActionResponse(status="accepted", action=f"rotate_station_token:{station_id}")
 
 
 @router.post("/connectors/{connector_id}/available", response_model=AdminActionResponse)

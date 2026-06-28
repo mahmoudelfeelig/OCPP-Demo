@@ -46,12 +46,16 @@ async def page_params(
     return limit, offset
 
 
-def _meta(items: list[Any], limit: int, offset: int) -> PageMeta:
-    return PageMeta(limit=limit, offset=offset, count=len(items))
+def _meta(items: list[Any], limit: int, offset: int, total: int) -> PageMeta:
+    return PageMeta(limit=limit, offset=offset, count=len(items), total=total)
 
 
 def _paged(db: Session, stmt: Select[tuple[Any]], limit: int, offset: int) -> list[Any]:
     return list(db.scalars(stmt.offset(offset).limit(limit)))
+
+
+def _total(db: Session, stmt: Select[tuple[Any]]) -> int:
+    return db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
 
 
 def _station(station: Station) -> dict[str, Any]:
@@ -111,8 +115,9 @@ async def list_sites(
     _user=Depends(require_role("admin", "operator")),
 ) -> SitesResponse:
     limit, offset = paging
-    items = site_card_data(db)[offset : offset + limit]
-    return SitesResponse(items=items, meta=_meta(items, limit, offset))
+    all_items = site_card_data(db)
+    items = all_items[offset : offset + limit]
+    return SitesResponse(items=items, meta=_meta(items, limit, offset, len(all_items)))
 
 
 @router.get("/stations", response_model=StationsResponse)
@@ -132,9 +137,10 @@ async def list_stations(
         stmt = stmt.where(Station.state == state)
     if online is not None:
         stmt = stmt.where(Station.online.is_(online))
+    total = _total(db, stmt)
     stations = _paged(db, stmt, limit, offset)
     items = [_station(station) for station in stations]
-    return StationsResponse(items=items, meta=_meta(items, limit, offset))
+    return StationsResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/sessions", response_model=SessionsResponse)
@@ -157,9 +163,10 @@ async def list_sessions(
         stmt = stmt.where(ChargingSession.state == state)
     if transaction_state:
         stmt = stmt.where(ChargingSession.transaction_state == transaction_state)
+    total = _total(db, stmt)
     sessions = _paged(db, stmt, limit, offset)
     items = [_session(session) for session in sessions]
-    return SessionsResponse(items=items, meta=_meta(items, limit, offset))
+    return SessionsResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/sessions/{session_id}", response_model=ItemResponse)
@@ -193,9 +200,10 @@ async def list_transactions(
         stmt = stmt.where(Transaction.state == state)
     if session_id:
         stmt = stmt.where(Transaction.session_id == session_id)
+    total = _total(db, stmt)
     transactions = _paged(db, stmt, limit, offset)
     items = [_transaction(txn) for txn in transactions]
-    return TransactionsResponse(items=items, meta=_meta(items, limit, offset))
+    return TransactionsResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/transactions/{transaction_id}", response_model=ItemResponse)
@@ -220,6 +228,7 @@ async def list_events(
         stmt = stmt.where(AuditEvent.entity_type == entity_type)
     if action:
         stmt = stmt.where(AuditEvent.action == action)
+    total = _total(db, stmt)
     events = _paged(db, stmt, limit, offset)
     items = [
         {
@@ -231,7 +240,7 @@ async def list_events(
         }
         for event in events
     ]
-    return EventsResponse(items=items, meta=_meta(items, limit, offset))
+    return EventsResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/messages", response_model=MessagesResponse)
@@ -251,6 +260,7 @@ async def list_messages(
         stmt = stmt.where(OcppMessage.action == action)
     if status:
         stmt = stmt.where(OcppMessage.status == status)
+    total = _total(db, stmt)
     messages = _paged(db, stmt, limit, offset)
     items = [
         {
@@ -264,7 +274,7 @@ async def list_messages(
         }
         for message in messages
     ]
-    return MessagesResponse(items=items, meta=_meta(items, limit, offset))
+    return MessagesResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/outbox", response_model=OutboxResponse)
@@ -281,6 +291,7 @@ async def list_outbox(
         stmt = stmt.where(OutboxEvent.status == status)
     if event_type:
         stmt = stmt.where(OutboxEvent.event_type == event_type)
+    total = _total(db, stmt)
     events = _paged(db, stmt, limit, offset)
     items = [
         {
@@ -295,7 +306,7 @@ async def list_outbox(
         }
         for event in events
     ]
-    return OutboxResponse(items=items, meta=_meta(items, limit, offset))
+    return OutboxResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/webhooks", response_model=WebhooksResponse)
@@ -312,6 +323,7 @@ async def list_webhooks(
         stmt = stmt.where(PartnerEvent.status == status)
     if signature_valid is not None:
         stmt = stmt.where(PartnerEvent.signature_valid.is_(signature_valid))
+    total = _total(db, stmt)
     events = _paged(db, stmt, limit, offset)
     items = [
         {
@@ -324,7 +336,7 @@ async def list_webhooks(
         }
         for event in events
     ]
-    return WebhooksResponse(items=items, meta=_meta(items, limit, offset))
+    return WebhooksResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/sites/{site_id}", response_model=ItemResponse)
@@ -348,9 +360,10 @@ async def list_site_stations(
     stmt = select(Station).where(Station.site_id == site_id).order_by(Station.label)
     if state:
         stmt = stmt.where(Station.state == state)
+    total = _total(db, stmt)
     stations = _paged(db, stmt, limit, offset)
     items = [_station(station) for station in stations]
-    return StationsResponse(items=items, meta=_meta(items, limit, offset))
+    return StationsResponse(items=items, meta=_meta(items, limit, offset, total))
 
 
 @router.get("/stations/{station_id}", response_model=ItemResponse)
@@ -371,6 +384,7 @@ async def list_station_connectors(
     stmt = select(Connector).where(Connector.station_id == station_id).order_by(Connector.connector_number)
     if state:
         stmt = stmt.where(Connector.state == state)
+    total = _total(db, stmt)
     connectors = _paged(db, stmt, limit, offset)
     items = [
         {
@@ -382,4 +396,4 @@ async def list_station_connectors(
         }
         for connector in connectors
     ]
-    return ConnectorsResponse(items=items, meta=_meta(items, limit, offset))
+    return ConnectorsResponse(items=items, meta=_meta(items, limit, offset, total))

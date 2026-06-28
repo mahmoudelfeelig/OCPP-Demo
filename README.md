@@ -17,6 +17,7 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 - Caddy reverse proxy
 - JWT auth with `admin` and `operator` roles
 - JSON logs and OpenTelemetry export to logs/local collector
+- Per-station bearer-token authentication for OCPP WebSocket connections
 
 ## Repository Layout
 
@@ -67,6 +68,9 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 - For a first production admin, set `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` in `deploy/.env`, start the stack once, sign in, then remove or clear those bootstrap values after the admin exists.
 - Do not use demo seeded accounts as a production bootstrap path.
 - Rotate the partner webhook secret by updating `PARTNER_WEBHOOK_SECRET` in `deploy/.env` and restarting the stack; the UI shows this as a manual operator flow rather than an automated secret manager integration.
+- Configure `OCPP_STATION_TOKENS` as a JSON object mapping station external IDs to unique random tokens of at least 32 characters. The backend stores only SHA-256 token hashes.
+- Chargers connect to `/ocpp/{station-id}` with `Authorization: Bearer <station-token>`. Admins can rotate a station token from the Admin view; update the charger and simulator environment with the same new token before reconnecting.
+- Simulator state, scenario, and run endpoints require a currently active admin or operator bearer token.
 - The database is the durable source of truth.
 - Redis is used for short-lived station snapshots and worker heartbeat state. Most dashboard reads still query PostgreSQL directly.
 - Worker processing is idempotent and outbox-backed. The current handlers mark OCPP messages and partner events processed; downstream webhook fanout, command dispatch, and projection consumers are not implemented.
@@ -80,7 +84,7 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 
 - If the stack fails to boot, check `docker compose logs -f`.
 - If the UI cannot reach the API, confirm Caddy is listening on port `8080`.
-- If OCPP traffic is not flowing, confirm the backend WebSocket endpoint and simulator connection settings.
+- If OCPP traffic is not flowing, confirm the backend WebSocket endpoint, station ID, and matching entry in `OCPP_STATION_TOKENS`.
 - If the database schema is missing, run the Alembic migration command in the backend container.
 
 ## Deployment

@@ -3,7 +3,7 @@ import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from simulator.app import app, run_happy_path
+from simulator.app import app, require_authenticated_user, run_happy_path
 
 
 class FakeWebSocket:
@@ -33,15 +33,30 @@ async def test_health_endpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_scenarios_include_webhook_failure_injection() -> None:
+async def test_scenarios_require_authentication() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/scenarios")
-    assert response.status_code == 200
-    scenarios = response.json()["scenarios"]
-    assert "partner-webhook" in scenarios
-    assert "invalid-partner-signature" in scenarios
-    assert "duplicate-partner-event" in scenarios
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_scenarios_include_webhook_failure_injection() -> None:
+    async def authenticated_user() -> dict[str, str]:
+        return {"email": "operator@test.local", "role": "operator"}
+
+    app.dependency_overrides[require_authenticated_user] = authenticated_user
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/scenarios")
+        assert response.status_code == 200
+        scenarios = response.json()["scenarios"]
+        assert "partner-webhook" in scenarios
+        assert "invalid-partner-signature" in scenarios
+        assert "duplicate-partner-event" in scenarios
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

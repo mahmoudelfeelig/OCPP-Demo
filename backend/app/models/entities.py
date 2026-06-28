@@ -127,6 +127,7 @@ class Station(Base, TimestampMixin):
     online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     maintenance_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ocpp_token_hash: Mapped[str | None] = mapped_column(String(64))
 
     site: Mapped[Site] = relationship(back_populates="stations")
     connectors: Mapped[list["Connector"]] = relationship(back_populates="station", cascade="all, delete-orphan")
@@ -192,6 +193,7 @@ class MeterValue(Base, TimestampMixin):
     sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     value_kwh: Mapped[float] = mapped_column(nullable=False)
     unit: Mapped[str] = mapped_column(String(16), nullable=False, default="kWh")
+    measurand: Mapped[str | None] = mapped_column(String(64))
     duplicate_of_id: Mapped[str | None] = mapped_column(ForeignKey("meter_values.id", ondelete="SET NULL"))
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
@@ -201,7 +203,7 @@ class MeterValue(Base, TimestampMixin):
 
 class OcppMessage(Base, TimestampMixin):
     __tablename__ = "ocpp_messages"
-    __table_args__ = (UniqueConstraint("message_id", name="uq_ocpp_message_message_id"),)
+    __table_args__ = (UniqueConstraint("station_id", "message_id", name="uq_ocpp_message_station_message_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     station_id: Mapped[str] = mapped_column(ForeignKey("stations.id", ondelete="CASCADE"), nullable=False)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 from typing import Any
 
 from jose import JWTError, jwt
@@ -17,6 +19,16 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed_password: str) -> bool:
     return pwd_context.verify(password, hashed_password)
+
+
+def hash_station_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def verify_station_token(token: str, token_hash: str | None) -> bool:
+    if not token_hash:
+        return False
+    return hmac.compare_digest(hash_station_token(token), token_hash)
 
 
 def create_access_token(subject: str, role: str, expires_minutes: int = 720) -> str:
@@ -49,4 +61,3 @@ def try_decode_access_token(token: str) -> dict[str, Any] | None:
         return decode_access_token(token)
     except JWTError:
         return None
-

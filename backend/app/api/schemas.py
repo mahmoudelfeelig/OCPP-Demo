@@ -9,6 +9,7 @@ class PageMeta(BaseModel):
     limit: int
     offset: int
     count: int
+    total: int
 
 
 class SiteSummary(BaseModel):

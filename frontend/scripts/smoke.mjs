@@ -1,10 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = process.cwd();
 const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
 const styles = readFileSync(resolve(root, "app/globals.css"), "utf8");
 const layout = readFileSync(resolve(root, "app/layout.tsx"), "utf8");
+const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
 
 const requiredScreens = [
   "Overview",
@@ -40,6 +41,9 @@ const requiredUiSignals = [
   "Worker not configured locally",
   "Outbox retry worker idle",
   "Cache unreachable",
+  "requestAllPages",
+  "Promise.allSettled",
+  "Rotate station token",
   "loading-screen",
   "error",
   "confirmAndPost",
@@ -83,6 +87,23 @@ for (const route of ["sites", "activity", "simulator", "sessions", "admin"]) {
 
 if (!layout.includes("OCPP-Demo") || !layout.includes("icons")) {
   missing.push("metadata:brand-icon");
+}
+
+for (const asset of [
+  "public/assets/brand/elephant-logo.png",
+  "public/assets/brand/elephant-logo.ico",
+]) {
+  if (!existsSync(resolve(root, asset))) {
+    missing.push(`asset:${asset}`);
+  }
+}
+
+if (!page.includes("unoptimized")) {
+  missing.push("image:direct-logo-serving");
+}
+
+if (!dockerfile.includes("COPY public public") || !dockerfile.includes("COPY --from=builder /app/public ./public")) {
+  missing.push("docker:public-assets");
 }
 
 if (missing.length > 0) {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+import hashlib
 import zlib
 from typing import Any
 
@@ -79,7 +80,7 @@ TRANSACTION_TRANSITIONS = {
 }
 
 
-def _ocpp_response(action: str, message_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _ocpp_response(action: str, station_id: str, message_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(UTC).isoformat()
     if action == "BootNotification":
         return {"currentTime": now, "interval": 300, "status": "Accepted"}
@@ -89,14 +90,19 @@ def _ocpp_response(action: str, message_id: str, payload: dict[str, Any]) -> dic
         return {"idTagInfo": {"status": "Accepted"}}
     if action == "StartTransaction":
         return {
-            "transactionId": _transaction_id_for_message(message_id),
+            "transactionId": _transaction_id_for_message(station_id, message_id),
             "idTagInfo": {"status": "Accepted"},
         }
     return {}
 
 
-def _transaction_id_for_message(message_id: str) -> int:
-    return int(zlib.crc32(message_id.encode("utf-8")))
+def _transaction_id_for_message(station_id: str, message_id: str) -> int:
+    return int(zlib.crc32(f"{station_id}:{message_id}".encode("utf-8")))
+
+
+def _session_id_for_message(station_id: str, message_id: str) -> str:
+    digest = hashlib.sha256(f"{station_id}:{message_id}".encode("utf-8")).hexdigest()
+    return f"session-{digest[:48]}"
 
 
 def extract_ocpp_message_id(message_text: str) -> str | None:
@@ -233,7 +239,15 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
             message_type_id, message_id, action, payload = _parse_message(message_text)
             span.set_attribute("ocpp.station_id", station_id)
             span.set_attribute("ocpp.action", action)
-            existing = MessageRepository(db).get_by_message_id(message_id)
+            station = db.get(Station, station_id)
+            if station is None:
+                matches = list(db.scalars(select(Station).where(Station.external_id == station_id)))
+                if len(matches) > 1:
+                    raise LookupError("Station identifier is ambiguous")
+                station = matches[0] if matches else None
+            if station is None:
+                raise LookupError("Station not found")
+            existing = MessageRepository(db).get_by_message_id(station.id, message_id)
             if existing is not None:
                 processed_messages.inc()
                 return {
@@ -241,14 +255,13 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
                     "status": existing.status,
                     "action": existing.action,
                     "duplicate": True,
-                    "response_payload": _ocpp_response(existing.action, existing.message_id, existing.payload),
+                    "response_payload": _ocpp_response(
+                        existing.action,
+                        existing.station_id,
+                        existing.message_id,
+                        existing.payload,
+                    ),
                 }
-
-            station = db.get(Station, station_id)
-            if station is None:
-                station = db.scalar(select(Station).where(Station.external_id == station_id))
-            if station is None:
-                raise LookupError("Station not found")
 
             message = OcppMessage(
                 station_id=station.id,
@@ -320,6 +333,7 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
                 if connector is None:
                     connector = Connector(station_id=station.id, connector_number=connector_number)
                     db.add(connector)
+                    db.flush()
                 status_map = {
                     "Available": ConnectorState.AVAILABLE.value,
                     "Occupied": ConnectorState.OCCUPIED.value,
@@ -369,13 +383,13 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
 
             if action == "StartTransaction":
                 connector_number = int(payload.get("connectorId", 1))
-                ocpp_transaction_id = str(_transaction_id_for_message(message_id))
+                ocpp_transaction_id = str(_transaction_id_for_message(station.id, message_id))
                 connector = next((item for item in station.connectors if item.connector_number == connector_number), None)
                 if connector is None:
                     connector = Connector(station_id=station.id, connector_number=connector_number, state=ConnectorState.OCCUPIED.value)
                     db.add(connector)
                     db.flush()
-                external_session_id = f"session-{message_id}"
+                external_session_id = _session_id_for_message(station.id, message_id)
                 session = db.scalar(select(ChargingSession).where(ChargingSession.external_session_id == external_session_id))
                 if session is None:
                     session = ChargingSession(
@@ -445,39 +459,49 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
                     else None
                 )
                 if txn is not None:
-                    meter_value = payload["meterValue"][0]
-                    sample = meter_value["sampledValue"][0]
-                    timestamp_text = meter_value["timestamp"].replace("Z", "+00:00")
-                    sampled_at = datetime.fromisoformat(timestamp_text)
-                    value_kwh = float(sample.get("value", 0.0))
-                    existing_meter_value = db.scalar(
-                        select(MeterValue).where(
-                            MeterValue.transaction_id == txn.id,
-                            MeterValue.sampled_at == sampled_at,
-                            MeterValue.value_kwh == value_kwh,
-                        )
-                    )
-                    if existing_meter_value is None:
-                        db.add(
-                            MeterValue(
-                                session_id=txn.session_id,
-                                transaction_id=txn.id,
-                                message_id=message_id,
-                                sampled_at=sampled_at,
-                                value_kwh=value_kwh,
-                                unit=sample.get("unit", "kWh"),
-                                raw_payload=payload,
+                    for meter_value in payload["meterValue"]:
+                        timestamp_text = meter_value["timestamp"].replace("Z", "+00:00")
+                        sampled_at = datetime.fromisoformat(timestamp_text)
+                        for sample in meter_value["sampledValue"]:
+                            value_kwh = float(sample["value"])
+                            unit = str(sample.get("unit", "kWh"))
+                            raw_measurand = sample.get("measurand")
+                            measurand = str(raw_measurand) if raw_measurand is not None else None
+                            existing_meter_value = db.scalar(
+                                select(MeterValue).where(
+                                    MeterValue.transaction_id == txn.id,
+                                    MeterValue.sampled_at == sampled_at,
+                                    MeterValue.value_kwh == value_kwh,
+                                    MeterValue.unit == unit,
+                                    MeterValue.measurand == measurand,
+                                )
                             )
-                        )
-                    else:
-                        db.add(
-                            AuditEvent(
-                                action="duplicate_meter_value_ignored",
-                                entity_type="meter_value",
-                                entity_id=existing_meter_value.id,
-                                payload={"message_id": message_id, "transaction_id": transaction_id},
-                            )
-                        )
+                            if existing_meter_value is None:
+                                db.add(
+                                    MeterValue(
+                                        session_id=txn.session_id,
+                                        transaction_id=txn.id,
+                                        message_id=message_id,
+                                        sampled_at=sampled_at,
+                                        value_kwh=value_kwh,
+                                        unit=unit,
+                                        measurand=measurand,
+                                        raw_payload={"meter_value": meter_value, "sampled_value": sample},
+                                    )
+                                )
+                            else:
+                                db.add(
+                                    AuditEvent(
+                                        action="duplicate_meter_value_ignored",
+                                        entity_type="meter_value",
+                                        entity_id=existing_meter_value.id,
+                                        payload={
+                                            "message_id": message_id,
+                                            "transaction_id": transaction_id,
+                                            "measurand": measurand,
+                                        },
+                                    )
+                                )
 
             if action == "StopTransaction":
                 transaction_id = str(payload.get("transactionId", message_id))
@@ -536,7 +560,7 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
                 "status": "accepted",
                 "action": action,
                 "duplicate": False,
-                "response_payload": _ocpp_response(action, message_id, payload),
+                "response_payload": _ocpp_response(action, station.id, message_id, payload),
             }
         except Exception:
             failed_messages.inc()
