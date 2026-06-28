@@ -1,5 +1,5 @@
 # Product Direction
-- [x] Build `ocpp-backend-demo` as a backend lifecycle demo for Qwello.
+- [x] Build `ocpp-backend-demo` as a backend lifecycle demo.
 - [x] Focus on backend engineering judgment, not a complete charging platform.
 - [x] Model a multi-site EV charging fleet.
 - [x] Use OCPP 1.6 as the demo protocol scope.

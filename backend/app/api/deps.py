@@ -37,6 +37,8 @@ async def get_current_user(
     user = UserRepository(db).get_by_id(payload["sub"])
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
     return CurrentUser(id=user.id, email=user.email, role=user.role.name)
 
 

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="postgresql+psycopg://ocpp_demo:ocpp_demo@postgres:5432/ocpp_demo")
     redis_url: str = Field(default="redis://redis:6379/0")
     otel_exporter_otlp_endpoint: str = Field(default="http://otel-collector:4318")
+    station_heartbeat_timeout_seconds: int = Field(default=600)
     jwt_secret: str = Field(default="change-me")
     jwt_issuer: str = Field(default="ocpp-backend-demo")
     jwt_audience: str = Field(default="ocpp-backend-demo-web")

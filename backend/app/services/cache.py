@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from redis import Redis
@@ -51,3 +52,23 @@ def cache_status() -> str:
         return "ok" if get_redis_client().ping() else "degraded"
     except RedisError:
         return "degraded"
+
+
+WORKER_HEARTBEAT_KEY = "worker-heartbeat"
+
+
+def write_worker_heartbeat(worker_id: str, ttl_seconds: int = 15, client: RedisLike | None = None) -> None:
+    redis = client or get_redis_client()
+    redis.setex(
+        WORKER_HEARTBEAT_KEY,
+        ttl_seconds,
+        json.dumps({"worker_id": worker_id, "seen_at": datetime.now(UTC).isoformat()}, sort_keys=True),
+    )
+
+
+def worker_status(client: RedisLike | None = None) -> str:
+    try:
+        redis = client or get_redis_client()
+        return "ok" if redis.get(WORKER_HEARTBEAT_KEY) is not None else "unknown"
+    except RedisError:
+        return "unknown"

@@ -102,8 +102,8 @@ def seed_demo_data(db: Session) -> None:
         direction="inbound",
         action="BootNotification",
         message_id="boot-001",
-        payload={"chargePointVendor": "Qwello", "chargePointModel": "Demo DC"},
-        raw_message_text='[2,"boot-001","BootNotification",{"chargePointVendor":"Qwello","chargePointModel":"Demo DC"}]',
+        payload={"chargePointVendor": "OCPP-Demo", "chargePointModel": "Demo DC"},
+        raw_message_text='[2,"boot-001","BootNotification",{"chargePointVendor":"OCPP-Demo","chargePointModel":"Demo DC"}]',
     )
     db.add(ocpp_message)
     db.flush()
@@ -140,4 +140,3 @@ def seed_demo_data(db: Session) -> None:
     )
 
     db.commit()
-

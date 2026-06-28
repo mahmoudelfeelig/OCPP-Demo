@@ -10,7 +10,7 @@ from starlette.responses import Response
 from app.db.session import get_session
 from app.core.metrics import active_sessions, connected_stations, worker_lag_seconds
 from app.models.entities import ChargingSession, OcppMessage, OutboxEvent, Station
-from app.services.cache import cache_status
+from app.services.cache import cache_status, worker_status
 
 router = APIRouter(prefix="/metrics")
 
@@ -29,6 +29,8 @@ async def status() -> dict[str, str]:
         processed_count = db.scalar(select(func.count()).select_from(OcppMessage).where(OcppMessage.status == "processed")) or 0
         failed_count = db.scalar(select(func.count()).select_from(OcppMessage).where(OcppMessage.status == "failed")) or 0
         retry_count = db.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.status == "retrying")) or 0
+        pending_count = db.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.status == "pending")) or 0
+        processing_count = db.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.status == "processing")) or 0
         oldest_pending = db.scalar(
             select(func.min(OutboxEvent.created_at)).where(OutboxEvent.status == "pending")
         )
@@ -40,16 +42,34 @@ async def status() -> dict[str, str]:
         worker_lag_seconds.set(lag_seconds)
         db.execute(text("select 1"))
         cache = cache_status()
+        worker_heartbeat = worker_status()
     finally:
         db.close()
+    if worker_heartbeat == "unknown":
+        worker = "unknown"
+        worker_detail = "Worker not configured locally"
+    elif processing_count:
+        worker = "processing"
+        worker_detail = "Outbox retry worker is processing events"
+    elif pending_count or retry_count:
+        worker = "attention"
+        worker_detail = "Outbox retry worker has pending work"
+    else:
+        worker = "idle"
+        worker_detail = "Outbox retry worker idle"
+    cache_detail = "Cache reachable" if cache == "ok" else "Cache unreachable"
     return {
-        "worker": "unknown",
+        "worker": worker,
+        "worker_detail": worker_detail,
         "cache": cache,
+        "cache_detail": cache_detail,
         "status": "ok",
         "connected_stations": str(connected_count),
         "active_sessions": str(session_count),
         "processed_messages": str(processed_count),
         "failed_messages": str(failed_count),
         "retrying_outbox": str(retry_count),
+        "pending_outbox": str(pending_count),
+        "processing_outbox": str(processing_count),
         "worker_lag_seconds": f"{lag_seconds:.1f}",
     }

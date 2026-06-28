@@ -4,8 +4,13 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ocpp-backend-demo",
+  title: "OCPP-Demo",
   description: "Operations dashboard for OCPP lifecycle demo",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.cache import StationSnapshotCache
+from app.services.cache import WORKER_HEARTBEAT_KEY, StationSnapshotCache, worker_status, write_worker_heartbeat
 
 
 class FakeRedis:
@@ -42,3 +42,14 @@ def test_station_snapshot_cache_roundtrip_and_invalidate() -> None:
     cache.invalidate("station-1")
 
     assert cache.get("station-1") is None
+
+
+def test_worker_heartbeat_status_roundtrip() -> None:
+    redis = FakeRedis()
+
+    assert worker_status(redis) == "unknown"
+
+    write_worker_heartbeat("worker-1", ttl_seconds=9, client=redis)
+
+    assert redis.ttls[WORKER_HEARTBEAT_KEY] == 9
+    assert worker_status(redis) == "ok"

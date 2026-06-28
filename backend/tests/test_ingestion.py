@@ -33,7 +33,7 @@ def test_ocpp_message_ingestion_is_idempotent(db_session) -> None:
     db_session.add(Connector(station_id=station.id, connector_number=1))
     db_session.commit()
 
-    message = '[2,"msg-001","BootNotification",{"chargePointVendor":"Qwello","chargePointModel":"Demo"}]'
+    message = '[2,"msg-001","BootNotification",{"chargePointVendor":"OCPP-Demo","chargePointModel":"Demo"}]'
     first = ingest_ocpp_message(db_session, station.id, message)
     second = ingest_ocpp_message(db_session, station.id, message)
 
@@ -51,7 +51,7 @@ def test_ocpp_ingestion_records_state_history(db_session) -> None:
     db_session.add(Connector(station_id=station.id, connector_number=1))
     db_session.commit()
 
-    ingest_ocpp_message(db_session, station.id, '[2,"msg-002","BootNotification",{"chargePointVendor":"Qwello","chargePointModel":"Demo"}]')
+    ingest_ocpp_message(db_session, station.id, '[2,"msg-002","BootNotification",{"chargePointVendor":"OCPP-Demo","chargePointModel":"Demo"}]')
 
     history = list(db_session.scalars(select(AuditEvent).order_by(AuditEvent.created_at.asc())))
     assert any(event.entity_type == "station" and event.action == "station_state_changed" for event in history)
@@ -167,7 +167,7 @@ def test_ocpp_happy_path_lifecycle(db_session) -> None:
     db_session.add(connector)
     db_session.commit()
 
-    ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"boot-happy","BootNotification",{"chargePointVendor":"Qwello","chargePointModel":"Demo"}]')
+    ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"boot-happy","BootNotification",{"chargePointVendor":"OCPP-Demo","chargePointModel":"Demo"}]')
     ingest_ocpp_message(db_session, "ST-HAPPY", '[2,"auth-happy","Authorize",{"idTag":"ABC"}]')
     ingest_ocpp_message(
         db_session,

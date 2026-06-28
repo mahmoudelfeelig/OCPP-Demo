@@ -19,7 +19,7 @@ async def test_happy_path_boot_notification_against_backend_container() -> None:
     url = os.environ["OCPP_BACKEND_WS_URL"]
     message_id = str(uuid4())
     async with websockets.connect(url) as ws:
-        await ws.send(json.dumps([2, message_id, "BootNotification", {"chargePointVendor": "Qwello", "chargePointModel": "Integration"}]))
+        await ws.send(json.dumps([2, message_id, "BootNotification", {"chargePointVendor": "OCPP-Demo", "chargePointModel": "Integration"}]))
         response = json.loads(await ws.recv())
 
     assert response[0] == 3

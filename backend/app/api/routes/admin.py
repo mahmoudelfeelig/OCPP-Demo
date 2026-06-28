@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, require_role
@@ -32,6 +32,20 @@ class UserResponse(BaseModel):
     role: str
     display_name: str | None = None
     is_active: bool
+    created_at: str
+    last_login_at: str | None = None
+
+
+def active_admin_count(db: Session) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(User)
+            .join(Role)
+            .where(User.is_active.is_(True), Role.name == "admin")
+        )
+        or 0
+    )
 
 
 @router.post("/simulator/remote-start", response_model=AdminActionResponse)
@@ -134,6 +148,7 @@ async def list_users(
             role=user.role.name,
             display_name=user.display_name,
             is_active=user.is_active,
+            created_at=user.created_at.isoformat(),
         )
         for user in users
     ]
@@ -168,7 +183,14 @@ async def create_user(
         )
     )
     db.commit()
-    return UserResponse(id=user.id, email=user.email, role=user_role.name if user_role else payload.role, display_name=user.display_name, is_active=user.is_active)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        role=user_role.name if user_role else payload.role,
+        display_name=user.display_name,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat(),
+    )
 
 
 @router.post("/users/{user_id}/role", response_model=AdminActionResponse)
@@ -184,6 +206,8 @@ async def update_user_role(
     role = db.scalar(select(Role).where(Role.name == payload.get("role", "operator")))
     if role is None:
         raise HTTPException(status_code=400, detail="Unknown role")
+    if user.role.name == "admin" and role.name != "admin" and user.is_active and active_admin_count(db) <= 1:
+        raise HTTPException(status_code=409, detail="Cannot demote the last active admin")
     user.role_id = role.id
     db.add(
         AuditEvent(
@@ -196,6 +220,56 @@ async def update_user_role(
     )
     db.commit()
     return AdminActionResponse(status="accepted", action=f"update_user_role:{user_id}")
+
+
+@router.post("/users/{user_id}/deactivate", response_model=AdminActionResponse)
+async def deactivate_user(
+    user_id: str,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> AdminActionResponse:
+    if user_id == current_user.id:
+        raise HTTPException(status_code=409, detail="You cannot remove your own account")
+    user = db.get(User, user_id)
+    if user is None:
+        return AdminActionResponse(status="missing", action=f"deactivate_user:{user_id}")
+    if user.role.name == "admin" and user.is_active and active_admin_count(db) <= 1:
+        raise HTTPException(status_code=409, detail="Cannot remove the last active admin")
+    user.is_active = False
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="deactivate_user",
+            entity_type="user",
+            entity_id=user.id,
+            payload={"email": user.email},
+        )
+    )
+    db.commit()
+    return AdminActionResponse(status="accepted", action=f"deactivate_user:{user_id}")
+
+
+@router.post("/users/{user_id}/activate", response_model=AdminActionResponse)
+async def activate_user(
+    user_id: str,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> AdminActionResponse:
+    user = db.get(User, user_id)
+    if user is None:
+        return AdminActionResponse(status="missing", action=f"activate_user:{user_id}")
+    user.is_active = True
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="activate_user",
+            entity_type="user",
+            entity_id=user.id,
+            payload={"email": user.email},
+        )
+    )
+    db.commit()
+    return AdminActionResponse(status="accepted", action=f"activate_user:{user_id}")
 
 
 @router.post("/stations/{station_id}/maintenance", response_model=AdminActionResponse)

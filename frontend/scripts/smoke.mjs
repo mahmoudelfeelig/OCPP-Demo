@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
 const styles = readFileSync(resolve(root, "app/globals.css"), "utf8");
+const layout = readFileSync(resolve(root, "app/layout.tsx"), "utf8");
 
 const requiredScreens = [
   "Overview",
@@ -33,6 +34,12 @@ const requiredUiSignals = [
   "Password",
   "Fleet operations dashboard.",
   "© Mahmoud elfeel 2026",
+  "OCPP-Demo",
+  "viewPaths",
+  "GlassSelect",
+  "Worker not configured locally",
+  "Outbox retry worker idle",
+  "Cache unreachable",
   "loading-screen",
   "error",
   "confirmAndPost",
@@ -64,6 +71,18 @@ for (const signal of requiredUiSignals) {
 
 if (!styles.includes("radial-gradient") || !styles.includes("rgba(") || !styles.includes("--shadow")) {
   missing.push("visual:liquid-glass-style");
+}
+
+for (const route of ["sites", "activity", "simulator", "sessions", "admin"]) {
+  try {
+    readFileSync(resolve(root, `app/${route}/page.tsx`), "utf8");
+  } catch {
+    missing.push(`route:/${route}`);
+  }
+}
+
+if (!layout.includes("OCPP-Demo") || !layout.includes("icons")) {
+  missing.push("metadata:brand-icon");
 }
 
 if (missing.length > 0) {

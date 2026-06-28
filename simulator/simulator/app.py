@@ -95,7 +95,7 @@ async def pause(speed: str) -> None:
 
 async def run_happy_path(ws, station_id: str, connector_id: int, speed: str) -> None:
     message_id = str(uuid4())
-    await send_frame(ws, [2, message_id, "BootNotification", {"chargePointVendor": "Qwello", "chargePointModel": "Demo"}])
+    await send_frame(ws, [2, message_id, "BootNotification", {"chargePointVendor": "OCPP-Demo", "chargePointModel": "Demo"}])
     await pause(speed)
     await send_frame(ws, [2, str(uuid4()), "Heartbeat", {}])
     await pause(speed)
