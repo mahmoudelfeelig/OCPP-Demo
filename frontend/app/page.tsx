@@ -337,6 +337,12 @@ function titleCase(value: string | null | undefined) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function simulatorDirectionLabel(direction: string | null | undefined) {
+  if (direction === "outbound") return "Sent by simulator";
+  if (direction === "inbound") return "Received by simulator";
+  return titleCase(direction ?? "event");
+}
+
 function shortId(value: string | null | undefined) {
   if (!value) return "—";
   return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
@@ -1313,7 +1319,7 @@ export default function Page() {
                   {simulatorMessages.map((entry, index) => (
                     <div key={`${entry.timestamp}-${index}`} className="timeline-row">
                       <span className="timeline-time">{formatTime(entry.timestamp)}</span>
-                      <span className="timeline-tag">{titleCase(entry.direction ?? "event")}</span>
+                      <span className="timeline-tag">{simulatorDirectionLabel(entry.direction)}</span>
                       <span className="timeline-text">{typeof entry.payload === "string" ? entry.payload : JSON.stringify(entry.payload)}</span>
                     </div>
                   ))}
