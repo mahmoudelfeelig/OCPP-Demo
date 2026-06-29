@@ -135,7 +135,7 @@ select {
 
 .glass-select-menu {
   position: absolute;
-  z-index: 20;
+  z-index: 80;
   inset-inline: 0;
   top: calc(100% + 0.35rem);
   display: grid;
@@ -165,6 +165,16 @@ select {
 .glass-select-menu button.selected {
   border-color: rgba(71, 214, 180, 0.46);
   background: rgba(71, 214, 180, 0.14);
+}
+
+.glass-select-menu button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.glass-select-menu button:disabled:hover {
+  border-color: transparent;
+  background: transparent;
 }
 
 input:focus,
@@ -643,6 +653,11 @@ button:hover {
   -webkit-backdrop-filter: blur(30px);
 }
 
+.simulator-card,
+.admin-card {
+  overflow: visible;
+}
+
 .surface-light {
   background:
     radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.34), transparent 34%),
@@ -923,6 +938,7 @@ button:hover {
 }
 
 .connector-row {
+  position: relative;
   width: 100%;
   text-align: left;
   border-color: rgba(255, 255, 255, 0.28);
@@ -942,6 +958,26 @@ button:hover {
   border-color: rgba(71, 214, 180, 0.62);
   background: linear-gradient(135deg, rgba(71, 214, 180, 0.22), rgba(115, 231, 255, 0.13));
   box-shadow: 0 16px 36px rgba(71, 214, 180, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.connector-row.station-blocked {
+  border-color: rgba(255, 141, 141, 0.32);
+  background: linear-gradient(135deg, rgba(255, 141, 141, 0.12), rgba(255, 255, 255, 0.36));
+}
+
+.connector-row.selected::after {
+  content: "SELECTED";
+  position: absolute;
+  right: 0.55rem;
+  top: -0.54rem;
+  border: 1px solid rgba(71, 214, 180, 0.38);
+  border-radius: 999px;
+  background: rgba(71, 214, 180, 0.16);
+  color: #0d5a33;
+  padding: 0.16rem 0.42rem;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 .connector-number {
@@ -968,7 +1004,15 @@ button:hover {
 }
 
 .status-pill.available {
-  background: rgba(7, 17, 31, 0.08);
+  background: rgba(71, 214, 180, 0.16);
+  color: #0b5136;
+}
+
+.status-pill.unavailable,
+.status-pill.blocked,
+.status-pill.offline {
+  background: rgba(255, 183, 77, 0.22);
+  color: #765012;
 }
 
 .status-pill.faulted {
@@ -1002,6 +1046,23 @@ button:hover {
   align-content: start;
 }
 
+.action-section {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.22);
+  padding: 0.55rem;
+}
+
+.action-section > span {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
 .station-actions .ghost-button {
   justify-content: start;
   text-align: left;
@@ -1021,11 +1082,15 @@ button:hover {
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 0.1rem 0.65rem;
   padding: 0.4rem 0;
-  border-bottom: 1px solid rgba(16, 22, 34, 0.09);
+  border: 1px solid rgba(16, 22, 34, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.24);
+  padding: 0.52rem 0.6rem;
 }
 
 .surface-dark .message-line {
-  border-bottom-color: var(--line);
+  border-color: rgba(232, 247, 255, 0.12);
+  background: linear-gradient(135deg, rgba(71, 214, 180, 0.08), rgba(138, 180, 255, 0.05));
 }
 
 .message-line span {
@@ -1117,8 +1182,10 @@ button:hover {
   display: grid;
   grid-template-columns: 76px minmax(86px, 0.7fr) minmax(0, 1fr);
   gap: 0.45rem;
-  padding: 0.45rem 0;
-  border-bottom: 1px solid var(--line);
+  padding: 0.56rem 0.65rem;
+  border: 1px solid rgba(232, 247, 255, 0.12);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(71, 214, 180, 0.045));
 }
 
 .timeline-time,
@@ -1134,7 +1201,7 @@ button:hover {
 }
 
 .timeline-tag {
-  color: var(--accent);
+  color: #9ff2db;
   text-transform: uppercase;
   font-weight: 800;
 }
@@ -1380,6 +1447,16 @@ button:hover {
   border-top: 1px solid var(--line);
 }
 
+.simulator-blocker {
+  margin-top: 0.8rem;
+  border: 1px solid rgba(255, 183, 77, 0.34);
+  border-radius: 18px;
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffe1a3;
+  padding: 0.75rem;
+  line-height: 1.45;
+}
+
 .simulator-side-panel {
   min-width: 0;
   border: 1px solid var(--line);
@@ -1439,7 +1516,7 @@ button:hover {
 
 .admin-desktop-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.65fr) minmax(0, 1.35fr);
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
   gap: 1rem;
   margin-top: 0.9rem;
   align-items: start;

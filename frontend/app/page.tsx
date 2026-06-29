@@ -179,6 +179,13 @@ type SimulatorMessage = {
   payload?: unknown;
 };
 
+type SelectOption = {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+};
+
 type PendingConfirmation = {
   path: string;
   label: string;
@@ -340,6 +347,8 @@ function titleCase(value: string | null | undefined) {
 function simulatorDirectionLabel(direction: string | null | undefined) {
   if (direction === "outbound") return "Sent by simulator";
   if (direction === "inbound") return "Received by simulator";
+  if (direction === "error") return "Blocked";
+  if (direction === "info") return "Simulator";
   return titleCase(direction ?? "event");
 }
 
@@ -360,11 +369,32 @@ function describeMessage(action: string | null | undefined) {
   return labels[action ?? ""] ?? { title: titleCase(action), detail: "OCPP message received from a station." };
 }
 
+function describeSimulatorPayload(payload: unknown) {
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload)) {
+    const [messageType, messageId, actionOrCode, bodyOrMessage] = payload;
+    if (messageType === 2) return `${String(actionOrCode)} request ${shortId(String(messageId))}`;
+    if (messageType === 3) return `Accepted ${shortId(String(messageId))}: ${JSON.stringify(bodyOrMessage)}`;
+    if (messageType === 4) return `Rejected ${shortId(String(messageId))}: ${String(actionOrCode)} ${String(bodyOrMessage ?? "")}`;
+  }
+  if (payload && typeof payload === "object") {
+    const record = payload as JsonRecord;
+    if (typeof record.message === "string") return record.message;
+    if (typeof record.detail === "string") return record.detail;
+    if (typeof record.status_code === "number") return `HTTP ${record.status_code}: ${String(record.body ?? "")}`;
+  }
+  return JSON.stringify(payload);
+}
+
 function describeEvent(event: EventItem) {
   const action = String(event.action ?? event.event_type ?? "event");
   const labels: Record<string, string> = {
     seed_demo_data: "Demo data was created for this environment.",
     station_boot: "A station connected and sent a boot notification.",
+    station_heartbeat_missed: "A station missed its heartbeat window and was marked offline.",
+    connector_available: "An operator marked a connector available.",
+    connector_unavailable: "An operator marked a connector unavailable.",
+    state_transition: "A resource changed state.",
     partner_webhook: "A partner webhook event was processed.",
     create_user: "An admin user created an account.",
     retry_outbox_event: "An admin queued a failed outbox item for retry.",
@@ -387,6 +417,34 @@ function systemDetail(status: SystemStatus | null, key: "worker" | "cache") {
   if (status?.cache_detail) return status.cache_detail;
   if (!status?.cache || status.cache === "unknown") return "Cache unreachable";
   return status.cache === "ok" ? "Cache reachable" : "Cache unreachable";
+}
+
+function isStationUsable(station: StationItem | undefined) {
+  return Boolean(station?.online && station.state !== "offline" && station.state !== "faulted");
+}
+
+function isConnectorUsable(connector: ConnectorItem | undefined, station: StationItem | undefined) {
+  return Boolean(isStationUsable(station) && connector?.state === "available");
+}
+
+function connectorDisplayState(connector: ConnectorItem | undefined, station: StationItem | undefined) {
+  if (!connector) return "—";
+  if (!isStationUsable(station)) return "blocked";
+  return connector.state;
+}
+
+function connectorDisplayLabel(connector: ConnectorItem | undefined, station: StationItem | undefined) {
+  if (!connector) return "—";
+  if (!isStationUsable(station)) return "Station offline";
+  return titleCase(connector.state);
+}
+
+function connectorBlockedReason(connector: ConnectorItem | undefined, station: StationItem | undefined) {
+  if (!station) return "Select a station before running a simulator scenario.";
+  if (!isStationUsable(station)) return `${station.label} is offline or faulted. Bring it online before starting a simulated charge.`;
+  if (!connector) return "Select a connector before running a simulator scenario.";
+  if (connector.state !== "available") return `Connector ${connector.connector_number} is ${titleCase(connector.state)} and cannot start a new simulated charge.`;
+  return null;
 }
 
 function Surface({
@@ -490,7 +548,7 @@ function GlassSelect({
 }: {
   label: string;
   value: string;
-  options: Array<{ value: string; label: string; description?: string }>;
+  options: SelectOption[];
   open: boolean;
   onOpen: () => void;
   onChange: (value: string) => void;
@@ -512,6 +570,7 @@ function GlassSelect({
               key={option.value}
               type="button"
               className={option.value === value ? "selected" : ""}
+              disabled={option.disabled}
               onClick={() => onChange(option.value)}
             >
               <strong>{option.label}</strong>
@@ -746,8 +805,11 @@ export default function Page() {
 
   useEffect(() => {
     if (!state.sites.length) return;
-    if (!selectedSiteId) setSelectedSiteId(state.sites[0].id);
-    if (!selectedStationId) setSelectedStationId(state.stations[0]?.id ?? null);
+    const nextSiteId = selectedSiteId ?? state.sites[0].id;
+    if (!selectedSiteId) setSelectedSiteId(nextSiteId);
+    if (!selectedStationId || !state.stations.some((station) => station.id === selectedStationId && station.site_id === nextSiteId)) {
+      setSelectedStationId(state.stations.find((station) => station.site_id === nextSiteId)?.id ?? state.stations[0]?.id ?? null);
+    }
     if (!selectedSessionId) setSelectedSessionId(state.sessions[0]?.id ?? null);
   }, [state, selectedSiteId, selectedStationId, selectedSessionId]);
 
@@ -787,13 +849,17 @@ export default function Page() {
   const outboxRows = state.outbox.slice(0, 8);
   const webhookRows = state.webhooks.slice(0, 8);
   const simulatorMessages = ((state.simulatorState?.messages as SimulatorMessage[] | undefined) ?? []).slice(-4);
+  const connectorRunBlocker = connectorBlockedReason(selectedConnector, selectedStation);
+  const canRunSelectedScenario = selectedScenario.includes("partner") || !connectorRunBlocker;
 
   useEffect(() => {
     if (!token || !selectedStation?.id) return;
     requestJson<ListResponse<ConnectorItem>>(`/api/stations/${selectedStation.id}/connectors`, {}, token)
       .then((result) => {
-        setConnectors(result.items ?? []);
-        setSelectedConnectorId(result.items?.[0]?.id ?? null);
+        const nextConnectors = result.items ?? [];
+        setConnectors(nextConnectors);
+        const preferredConnector = nextConnectors.find((connector) => isConnectorUsable(connector, selectedStation)) ?? nextConnectors[0] ?? null;
+        setSelectedConnectorId(preferredConnector?.id ?? null);
       })
       .catch(() => setConnectors([]));
     requestJson<DetailItem<StationDetailItem>>(`/api/stations/${selectedStation.id}`, {}, token)
@@ -917,6 +983,10 @@ export default function Page() {
   }
 
   async function runScenario() {
+    if (!selectedScenario.includes("partner") && connectorRunBlocker) {
+      setActionError(connectorRunBlocker);
+      return;
+    }
     const body = {
       site_id: selectedSite?.id ?? null,
       station_id: selectedStation?.external_id ?? null,
@@ -1037,9 +1107,6 @@ export default function Page() {
                 </div>
               </div>
               <div className="station-actions-top">
-                <button type="button" className="ghost-button" onClick={() => selectedStation && confirmAndPost(`/api/admin/stations/${selectedStation.id}/maintenance`, "Toggle maintenance", `Put ${selectedStationName} in or out of maintenance mode. Use this when the station should not accept normal charging sessions.`, { enabled: !selectedStation.maintenance_mode })}>
-                  Maintenance
-                </button>
                 <button type="button" className="ghost-button" onClick={() => navigateView("activity")}>
                   Activity
                 </button>
@@ -1062,20 +1129,24 @@ export default function Page() {
                   <span>Power</span>
                   <span>Last Update</span>
                 </div>
-              {connectors.map((connector) => (
+              {connectors.map((connector) => {
+                const displayState = connectorDisplayState(connector, selectedStation);
+                const isSelected = selectedConnector?.id === connector.id;
+                return (
                   <button
                     key={connector.id}
                     type="button"
-                    className={`connector-row ${selectedConnector?.id === connector.id ? "selected" : ""}`}
+                    className={`connector-row ${isSelected ? "selected" : ""} ${!isStationUsable(selectedStation) ? "station-blocked" : ""}`}
                     onClick={() => setSelectedConnectorId(connector.id)}
                   >
                     <span className="connector-number">{String(connector.connector_number).padStart(2, "0")}</span>
-                    <span className={`status-pill ${connector.state}`}>{connector.state.toUpperCase()}</span>
+                    <span className={`status-pill ${displayState}`}>{connectorDisplayLabel(connector, selectedStation).toUpperCase()}</span>
                     <span>{selectedSession?.external_session_id ?? "—"}</span>
                     <span>{connector.state === "charging" ? "32.4 kW" : "0 kW"}</span>
-                    <span>{formatTime(selectedStation?.last_seen_at)}</span>
+                    <span>{isSelected ? "Selected" : formatTime(selectedStation?.last_seen_at)}</span>
                   </button>
-                ))}
+                );
+              })}
                 {!connectors.length ? <EmptyState label="No connectors reported for this station." /> : null}
               </div>
             </div>
@@ -1098,26 +1169,28 @@ export default function Page() {
 
               <div className="station-actions">
                 <h3>Actions</h3>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost(`/api/admin/stations/${selectedStation.id}/maintenance`, "Enable maintenance", `Enable maintenance mode for ${selectedStationName}. Drivers should not start normal charging while this is active.`, { enabled: true })}>
-                  <strong>Enable maintenance</strong>
-                  <small>Pause normal charging for this station.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost(`/api/admin/connectors/${selectedConnector?.id ?? ""}/available`, "Mark connector available", `Mark ${selectedConnectorName} as available so it can accept a charging session.`)}>
-                  <strong>Mark connector available</strong>
-                  <small>Use after a connector has recovered.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost(`/api/admin/connectors/${selectedConnector?.id ?? ""}/unavailable`, "Mark connector unavailable", `Mark ${selectedConnectorName} as unavailable so it is kept out of service.`)}>
-                  <strong>Mark connector unavailable</strong>
-                  <small>Use when the connector needs attention.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", `Record a simulated start audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
-                  <strong>Record simulated start</strong>
-                  <small>Audit-only; no outbound OCPP command.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", `Record a simulated stop audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
-                  <strong>Record simulated stop</strong>
-                  <small>Audit-only; no outbound OCPP command.</small>
-                </button>
+                <div className="action-section">
+                  <span>Connector state</span>
+                  <button type="button" className="ghost-button action-button" disabled={!selectedConnector} onClick={() => selectedConnector && confirmAndPost(`/api/admin/connectors/${selectedConnector.id}/available`, "Mark connector available", `Mark ${selectedConnectorName} as available so it can accept a charging session.`)}>
+                    <strong>Mark {selectedConnectorName} available</strong>
+                    <small>Use after a connector has recovered.</small>
+                  </button>
+                  <button type="button" className="ghost-button action-button" disabled={!selectedConnector} onClick={() => selectedConnector && confirmAndPost(`/api/admin/connectors/${selectedConnector.id}/unavailable`, "Mark connector unavailable", `Mark ${selectedConnectorName} as unavailable so it is kept out of service.`)}>
+                    <strong>Mark {selectedConnectorName} unavailable</strong>
+                    <small>Keep this connector out of service.</small>
+                  </button>
+                </div>
+                <div className="action-section">
+                  <span>Audit-only simulator records</span>
+                  <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", `Record a simulated start audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
+                    <strong>Record simulated start</strong>
+                    <small>Audit-only; no outbound OCPP command.</small>
+                  </button>
+                  <button type="button" className="ghost-button action-button" onClick={() => selectedStation && confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", `Record a simulated stop audit event for ${selectedStationName}. This does not contact the station or send an OCPP command.`)}>
+                    <strong>Record simulated stop</strong>
+                    <small>Audit-only; no outbound OCPP command.</small>
+                  </button>
+                </div>
                 <button type="button" className="ghost-button action-button" onClick={() => navigateView("activity")}>
                   <strong>Open activity log</strong>
                   <small>Review station messages and events.</small>
@@ -1131,6 +1204,7 @@ export default function Page() {
                 <strong>{selectedConnector ? `#${selectedConnector.connector_number}` : "None selected"}</strong>
               </div>
               <p>Status {titleCase(selectedConnector?.state)}</p>
+              {!isStationUsable(selectedStation) ? <p>Station is offline, so this connector is blocked from new sessions. Last known connector state is preserved.</p> : null}
               <p>{selectedConnector?.error_code ? `Fault ${selectedConnector.error_code}` : "No connector fault reported."}</p>
               <p>Station {selectedStation?.label ?? shortId(selectedConnector?.station_id)}</p>
             </div>
@@ -1271,7 +1345,12 @@ export default function Page() {
                   <GlassSelect
                     label="Connector"
                     value={selectedConnectorId ?? ""}
-                    options={connectors.map((connector) => ({ value: connector.id, label: `Connector ${connector.connector_number}`, description: titleCase(connector.state) }))}
+                    options={connectors.map((connector) => ({
+                      value: connector.id,
+                      label: `Connector ${connector.connector_number}`,
+                      description: isConnectorUsable(connector, selectedStation) ? "Available for simulation" : connectorDisplayLabel(connector, selectedStation),
+                      disabled: !isConnectorUsable(connector, selectedStation),
+                    }))}
                     open={openSelect === "connector"}
                     onOpen={() => setOpenSelect(openSelect === "connector" ? null : "connector")}
                     onChange={(value) => {
@@ -1306,8 +1385,9 @@ export default function Page() {
               </div>
               <div className="simulator-side-panel">
                 <div className="simulator-status">{state.simulatorState?.running === true ? "Simulation running..." : "Ready"}</div>
+                {connectorRunBlocker && !selectedScenario.includes("partner") ? <div className="simulator-blocker">{connectorRunBlocker}</div> : null}
                 <div className="simulator-preview">
-                  <button type="button" className="ghost-button" onClick={runScenario}>
+                  <button type="button" className="ghost-button" disabled={!canRunSelectedScenario} onClick={runScenario}>
                     Run simulation
                   </button>
                   <button type="button" className="danger-button" onClick={() => postAction("/api/admin/simulator/remote-stop", "Simulated stop audit recorded")}>
@@ -1320,7 +1400,7 @@ export default function Page() {
                     <div key={`${entry.timestamp}-${index}`} className="timeline-row">
                       <span className="timeline-time">{formatTime(entry.timestamp)}</span>
                       <span className="timeline-tag">{simulatorDirectionLabel(entry.direction)}</span>
-                      <span className="timeline-text">{typeof entry.payload === "string" ? entry.payload : JSON.stringify(entry.payload)}</span>
+                      <span className="timeline-text">{describeSimulatorPayload(entry.payload)}</span>
                     </div>
                   ))}
                   {!simulatorMessages.length ? <EmptyState label="No simulator messages yet." /> : null}
@@ -1530,11 +1610,11 @@ export default function Page() {
             </div>
           </Surface> : null}
 
-          {activeView === "admin" || activeView === "activity" ? <Surface tone="dark" className="system-card" id="system">
+          {activeView === "admin" ? <Surface tone="dark" className="system-card" id="system">
             <div className="card-head">
               <div>
                 <div className="eyebrow">system</div>
-                <h2>Health and observability</h2>
+                <h2>System health</h2>
               </div>
             </div>
             <div className="system-grid">

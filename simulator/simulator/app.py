@@ -73,6 +73,7 @@ async def require_authenticated_user(
     profile = response.json()
     if profile.get("role") not in {"admin", "operator"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    profile["token"] = credentials.credentials
     return profile
 
 
@@ -312,7 +313,42 @@ async def run_duplicate_partner_event(station_id: str) -> None:
     )
 
 
-async def connect_and_run(scenario: str, request: ScenarioRequest) -> dict[str, Any]:
+async def assert_connector_can_run(station_external_id: str, connector_number: int, user_token: str) -> None:
+    async with httpx.AsyncClient(base_url="http://backend:8000", timeout=5.0) as client:
+        headers = {"Authorization": f"Bearer {user_token}"}
+        stations_response = await client.get("/stations", headers=headers)
+        stations_response.raise_for_status()
+        stations = stations_response.json().get("items", [])
+        station = next(
+            (
+                item
+                for item in stations
+                if item.get("external_id") == station_external_id or item.get("id") == station_external_id
+            ),
+            None,
+        )
+        if station is None:
+            raise HTTPException(status_code=404, detail=f"Station {station_external_id} was not found")
+        if not station.get("online") or station.get("state") in {"offline", "faulted"}:
+            message = f"Simulation blocked: station {station.get('label') or station_external_id} is {station.get('state') or 'offline'}"
+            STATE.messages.append({"direction": "error", "payload": {"message": message}, "timestamp": datetime.now(UTC).isoformat()})
+            raise HTTPException(status_code=409, detail=message)
+
+        connectors_response = await client.get(f"/stations/{station['id']}/connectors", headers=headers)
+        connectors_response.raise_for_status()
+        connectors = connectors_response.json().get("items", [])
+        connector = next((item for item in connectors if item.get("connector_number") == connector_number), None)
+        if connector is None:
+            message = f"Simulation blocked: connector {connector_number} has not been reported by station {station_external_id}"
+            STATE.messages.append({"direction": "error", "payload": {"message": message}, "timestamp": datetime.now(UTC).isoformat()})
+            raise HTTPException(status_code=409, detail=message)
+        if connector.get("state") != "available":
+            message = f"Simulation blocked: connector {connector_number} is {connector.get('state')}, not available"
+            STATE.messages.append({"direction": "error", "payload": {"message": message}, "timestamp": datetime.now(UTC).isoformat()})
+            raise HTTPException(status_code=409, detail=message)
+
+
+async def connect_and_run(scenario: str, request: ScenarioRequest, user_token: str) -> dict[str, Any]:
     station_id = request.station_id or "BER-001"
     connector_id = int(request.connector_id or 1)
     websocket_url = f"ws://backend:8000/ocpp/{station_id}"
@@ -321,6 +357,15 @@ async def connect_and_run(scenario: str, request: ScenarioRequest) -> dict[str, 
     STATE.scenario = scenario
     STATE.station_id = station_id
     STATE.websocket_url = websocket_url
+    STATE.messages.append(
+        {
+            "direction": "info",
+            "payload": {"message": f"Preparing {scenario} for {station_id} connector {connector_id}"},
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
+    if "partner" not in scenario:
+        await assert_connector_can_run(station_id, connector_id, user_token)
     from os import getenv
 
     raw_tokens = getenv("OCPP_STATION_TOKENS", "")
@@ -372,4 +417,9 @@ async def run_scenario(
     request: ScenarioRequest,
     _user: dict[str, str] = Depends(require_authenticated_user),
 ) -> dict[str, Any]:
-    return await connect_and_run(scenario_name, request)
+    try:
+        return await connect_and_run(scenario_name, request, _user["token"])
+    except HTTPException:
+        STATE.connected = False
+        STATE.running = False
+        raise

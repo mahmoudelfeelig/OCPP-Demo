@@ -80,7 +80,7 @@ def test_ocpp_ingestion_records_state_history(db_session) -> None:
     assert any(event.entity_type == "station" and event.action == "station_state_changed" for event in history)
 
 
-def test_ocpp_ingestion_rejects_illegal_connector_transition(db_session) -> None:
+def test_ocpp_ingestion_rejects_start_on_faulted_connector(db_session) -> None:
     site = Site(slug="transition-site", label="Transition Site")
     db_session.add(site)
     db_session.flush()
@@ -96,11 +96,29 @@ def test_ocpp_ingestion_rejects_illegal_connector_transition(db_session) -> None
     )
     db_session.commit()
 
-    with pytest.raises(ValueError, match="Illegal connector state transition"):
+    with pytest.raises(ValueError, match="connector 1 is faulted"):
         ingest_ocpp_message(
             db_session,
             station.id,
             '[2,"msg-003","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
+        )
+
+
+def test_ocpp_ingestion_rejects_start_when_station_is_offline(db_session) -> None:
+    site = Site(slug="offline-start-site", label="Offline Start Site")
+    db_session.add(site)
+    db_session.flush()
+    station = Station(site_id=site.id, external_id="ST-OFF", label="Station Offline", state=StationState.OFFLINE.value, online=False)
+    db_session.add(station)
+    db_session.flush()
+    db_session.add(Connector(station_id=station.id, connector_number=1, state=ConnectorState.AVAILABLE.value))
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="station ST-OFF is offline"):
+        ingest_ocpp_message(
+            db_session,
+            station.id,
+            '[2,"offline-start","StartTransaction",{"connectorId":1,"idTag":"ABC","meterStart":0,"timestamp":"2026-06-26T12:00:00Z"}]',
         )
 
 

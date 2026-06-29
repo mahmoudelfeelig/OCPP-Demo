@@ -385,8 +385,12 @@ def ingest_ocpp_message(db: Session, station_id: str, message_text: str) -> dict
                 connector_number = int(payload.get("connectorId", 1))
                 ocpp_transaction_id = str(_transaction_id_for_message(station.id, message_id))
                 connector = next((item for item in station.connectors if item.connector_number == connector_number), None)
+                if not station.online or station.state in {StationState.OFFLINE.value, StationState.FAULTED.value}:
+                    raise ValueError(f"StartTransaction rejected: station {station.external_id or station.id} is {station.state}")
+                if connector is not None and connector.state != ConnectorState.AVAILABLE.value:
+                    raise ValueError(f"StartTransaction rejected: connector {connector.connector_number} is {connector.state}")
                 if connector is None:
-                    connector = Connector(station_id=station.id, connector_number=connector_number, state=ConnectorState.OCCUPIED.value)
+                    connector = Connector(station_id=station.id, connector_number=connector_number, state=ConnectorState.AVAILABLE.value)
                     db.add(connector)
                     db.flush()
                 external_session_id = _session_id_for_message(station.id, message_id)
