@@ -16,7 +16,7 @@ const requiredScreens = [
   "Admin & system",
   "Live events",
   "Message payload",
-  "Health and observability",
+  "System health",
 ];
 
 const requiredScenarios = [
