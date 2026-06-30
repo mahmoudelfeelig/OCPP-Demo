@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import inspect
 import json
+from os import getenv
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -271,9 +274,6 @@ async def post_partner_webhook(station_id: str, event_id: str, signature_overrid
     async with httpx.AsyncClient(base_url="http://backend:8000") as client:
         payload = {"event_id": event_id, "type": "session.completed", "station_id": station_id}
         payload_text = json.dumps(payload)
-        import hashlib, hmac
-
-        from os import getenv
 
         secret = getenv("PARTNER_WEBHOOK_SECRET", "change-me").encode("utf-8")
         signature = hmac.new(secret, payload_text.encode("utf-8"), hashlib.sha256).hexdigest()

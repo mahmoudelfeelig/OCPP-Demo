@@ -103,8 +103,9 @@ select {
   justify-content: space-between;
   gap: 0.8rem;
   text-align: left;
-  border-color: var(--line-strong);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.045));
+  border-color: rgba(148, 163, 184, 0.26);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.58));
+  color: var(--text);
 }
 
 .glass-select-trigger span:first-child {
@@ -116,21 +117,27 @@ select {
 .glass-select-trigger small,
 .glass-select-menu small,
 .action-button small {
-  color: var(--muted);
+  color: rgba(203, 213, 225, 0.78);
   font-size: 0.76rem;
   line-height: 1.35;
 }
 
-.glass-select-trigger strong,
 .glass-select-menu strong,
 .action-button strong {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
+.glass-select-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .glass-select.open .glass-select-trigger {
-  border-color: rgba(71, 214, 180, 0.58);
-  box-shadow: 0 0 0 3px rgba(71, 214, 180, 0.12), var(--inner-glow);
+  border-color: rgba(125, 211, 252, 0.68);
+  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.13), var(--inner-glow);
 }
 
 .glass-select-menu {
@@ -143,9 +150,9 @@ select {
   max-height: 280px;
   overflow: auto;
   padding: 0.35rem;
-  border: 1px solid var(--line-strong);
+  border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 18px;
-  background: rgba(8, 17, 30, 0.96);
+  background: rgba(6, 13, 25, 0.98);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36), var(--inner-glow);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
@@ -163,8 +170,8 @@ select {
 
 .glass-select-menu button:hover,
 .glass-select-menu button.selected {
-  border-color: rgba(71, 214, 180, 0.46);
-  background: rgba(71, 214, 180, 0.14);
+  border-color: rgba(125, 211, 252, 0.48);
+  background: rgba(125, 211, 252, 0.12);
 }
 
 .glass-select-menu button:disabled {
@@ -619,6 +626,15 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.station-actions-top {
+  justify-content: flex-end;
+}
+
+.station-actions-top .glass-select {
+  width: min(320px, 42vw);
+  z-index: 10;
+}
+
 .topbar-left span,
 .topbar-right span,
 .card-subnav span {
@@ -654,7 +670,8 @@ button:hover {
 }
 
 .simulator-card,
-.admin-card {
+.admin-card,
+.station-card {
   overflow: visible;
 }
 
@@ -712,6 +729,14 @@ button:hover {
   min-width: 0;
   display: grid;
   gap: 0.2rem;
+}
+
+.station-detail-head > .station-actions-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .kpi-grid {
@@ -941,10 +966,10 @@ button:hover {
   position: relative;
   width: 100%;
   text-align: left;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.44);
-  color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  border-color: rgba(148, 163, 184, 0.18);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.78), rgba(30, 41, 59, 0.42));
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .connector-row span {
@@ -955,29 +980,18 @@ button:hover {
 }
 
 .connector-row.selected {
-  border-color: rgba(71, 214, 180, 0.62);
-  background: linear-gradient(135deg, rgba(71, 214, 180, 0.22), rgba(115, 231, 255, 0.13));
-  box-shadow: 0 16px 36px rgba(71, 214, 180, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  border-color: rgba(125, 211, 252, 0.62);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(15, 23, 42, 0.7));
+  box-shadow: 0 16px 36px rgba(14, 165, 233, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .connector-row.station-blocked {
-  border-color: rgba(255, 141, 141, 0.32);
-  background: linear-gradient(135deg, rgba(255, 141, 141, 0.12), rgba(255, 255, 255, 0.36));
+  border-color: rgba(248, 113, 113, 0.34);
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.28), rgba(15, 23, 42, 0.68));
 }
 
 .connector-row.selected::after {
-  content: "SELECTED";
-  position: absolute;
-  right: 0.55rem;
-  top: -0.54rem;
-  border: 1px solid rgba(71, 214, 180, 0.38);
-  border-radius: 999px;
-  background: rgba(71, 214, 180, 0.16);
-  color: #0d5a33;
-  padding: 0.16rem 0.42rem;
-  font-size: 0.62rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
+  content: none;
 }
 
 .connector-number {
@@ -999,25 +1013,43 @@ button:hover {
 
 .status-pill.charging,
 .status-pill.online {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.24), rgba(71, 214, 180, 0.28));
-  color: #0d5a33;
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.26);
 }
 
 .status-pill.available {
-  background: rgba(71, 214, 180, 0.16);
-  color: #0b5136;
+  background: rgba(20, 184, 166, 0.16);
+  color: #99f6e4;
+  border: 1px solid rgba(20, 184, 166, 0.28);
 }
 
 .status-pill.unavailable,
 .status-pill.blocked,
 .status-pill.offline {
-  background: rgba(255, 183, 77, 0.22);
-  color: #765012;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.28);
 }
 
 .status-pill.faulted {
-  background: rgba(255, 141, 141, 0.28);
-  color: #7a2020;
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.selected-marker {
+  justify-self: start;
+  width: fit-content;
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.12);
+  color: #dbeafe;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .station-bottom {
@@ -1033,11 +1065,13 @@ button:hover {
   position: relative;
   overflow: hidden;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.36);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 211, 252, 0.08), transparent 34%),
+    rgba(15, 23, 42, 0.54);
   padding: 0.8rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .station-actions {
@@ -1049,14 +1083,14 @@ button:hover {
 .action-section {
   display: grid;
   gap: 0.45rem;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(15, 23, 42, 0.28);
   padding: 0.55rem;
 }
 
 .action-section > span {
-  color: var(--muted);
+  color: rgba(203, 213, 225, 0.78);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.68rem;
@@ -1081,10 +1115,9 @@ button:hover {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 0.1rem 0.65rem;
-  padding: 0.4rem 0;
-  border: 1px solid rgba(16, 22, 34, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(15, 23, 42, 0.42);
   padding: 0.52rem 0.6rem;
 }
 
@@ -1149,10 +1182,12 @@ button:hover {
 
 .view-admin .admin-card {
   grid-column: 1 / -1;
+  z-index: 30;
 }
 
 .view-admin .system-card {
   grid-column: 1 / -1;
+  z-index: 1;
 }
 
 .view-sessions .session-card,
@@ -1398,6 +1433,7 @@ button:hover {
 
 .simulator-form {
   margin-top: 0.9rem;
+  grid-template-columns: minmax(190px, 1.1fr) minmax(220px, 1.25fr) minmax(170px, 0.9fr) minmax(140px, 0.75fr);
 }
 
 .simulator-workspace {
@@ -1862,7 +1898,8 @@ button:hover {
   .detail-pairs,
   .system-grid,
   .system-summary,
-  .user-form {
+  .user-form,
+  .admin-card .user-form {
     grid-template-columns: 1fr;
   }
 

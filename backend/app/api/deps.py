@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.core.security import try_decode_access_token
 from app.db.session import get_db
-from app.models.entities import User
 from app.repositories.users import UserRepository
 
 bearer_scheme = HTTPBearer(auto_error=False)

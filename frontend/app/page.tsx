@@ -822,6 +822,7 @@ export default function Page() {
     () => state.stations.filter((station) => station.site_id === selectedSite?.id),
     [state.stations, selectedSite?.id],
   );
+  const simulatorStationOptions = siteStations.length ? siteStations : state.stations;
   const siteSessions = useMemo(
     () => state.sessions.filter((session) => session.site_id === selectedSite?.id),
     [state.sessions, selectedSite?.id],
@@ -1107,6 +1108,23 @@ export default function Page() {
                 </div>
               </div>
               <div className="station-actions-top">
+                <GlassSelect
+                  label="Station"
+                  value={selectedStationId ?? ""}
+                  options={state.stations.map((station) => ({
+                    value: station.id,
+                    label: station.label,
+                    description: `${station.external_id ?? station.id} · ${station.online ? "Online" : "Offline"}`,
+                  }))}
+                  open={openSelect === "overview-station"}
+                  onOpen={() => setOpenSelect(openSelect === "overview-station" ? null : "overview-station")}
+                  onChange={(value) => {
+                    const station = state.stations.find((item) => item.id === value);
+                    setSelectedStationId(value);
+                    if (station) setSelectedSiteId(station.site_id);
+                    setOpenSelect(null);
+                  }}
+                />
                 <button type="button" className="ghost-button" onClick={() => navigateView("activity")}>
                   Activity
                 </button>
@@ -1143,7 +1161,7 @@ export default function Page() {
                     <span className={`status-pill ${displayState}`}>{connectorDisplayLabel(connector, selectedStation).toUpperCase()}</span>
                     <span>{selectedSession?.external_session_id ?? "—"}</span>
                     <span>{connector.state === "charging" ? "32.4 kW" : "0 kW"}</span>
-                    <span>{isSelected ? "Selected" : formatTime(selectedStation?.last_seen_at)}</span>
+                    <span className={isSelected ? "selected-marker" : ""}>{isSelected ? "Selected" : formatTime(selectedStation?.last_seen_at)}</span>
                   </button>
                 );
               })}
@@ -1334,11 +1352,13 @@ export default function Page() {
                   <GlassSelect
                     label="Station"
                     value={selectedStationId ?? ""}
-                    options={siteStations.map((station) => ({ value: station.id, label: station.label, description: station.online ? "Online" : "Offline" }))}
+                    options={simulatorStationOptions.map((station) => ({ value: station.id, label: station.label, description: `${station.external_id ?? station.id} · ${station.online ? "Online" : "Offline"}` }))}
                     open={openSelect === "station"}
                     onOpen={() => setOpenSelect(openSelect === "station" ? null : "station")}
                     onChange={(value) => {
+                      const station = state.stations.find((item) => item.id === value);
                       setSelectedStationId(value);
+                      if (station) setSelectedSiteId(station.site_id);
                       setOpenSelect(null);
                     }}
                   />

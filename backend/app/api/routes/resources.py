@@ -25,7 +25,6 @@ from app.models.entities import (
     AuditEvent,
     ChargingSession,
     Connector,
-    MeterValue,
     OcppMessage,
     OutboxEvent,
     PartnerEvent,
@@ -33,7 +32,6 @@ from app.models.entities import (
     Station,
     Transaction,
 )
-from app.repositories.catalog import CatalogRepository
 from app.services.catalog import site_card_data
 
 router = APIRouter()

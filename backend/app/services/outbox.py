@@ -25,7 +25,6 @@ def process_outbox_event(db: Session, event: OutboxEvent) -> OutboxProcessingRes
     with tracer.start_as_current_span("outbox.process") as span:
         repo = OutboxRepository(db)
         try:
-            payload = event.payload or {}
             action = event.event_type
             span.set_attribute("outbox.event_type", action)
             if action.startswith("ocpp."):
