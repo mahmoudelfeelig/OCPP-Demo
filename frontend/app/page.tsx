@@ -1496,27 +1496,124 @@ export default function Page() {
             <div className="card-head">
               <div>
                 <div className="eyebrow">admin</div>
-                <h2>Operations</h2>
+                <h2>Admin console</h2>
               </div>
             </div>
             <div className="admin-desktop-grid">
-              <div className="admin-actions">
-                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStartTransaction.")}>
-                  <strong>Record simulated start</strong>
-                  <small>Audit-only simulator action.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStopTransaction.")}>
-                  <strong>Record simulated stop</strong>
-                  <small>Audit-only simulator action.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedOutboxId && confirmAndPost(`/api/admin/outbox/${selectedOutboxId}/retry`, "Retry failed outbox", `This requeues outbox item ${shortId(selectedOutboxId)} for delivery. Use it after fixing the cause of a failed webhook or downstream delivery.`)}>
-                  <strong>Retry failed outbox item</strong>
-                  <small>Requeue the oldest visible failed item.</small>
-                </button>
-                <button type="button" className="ghost-button action-button" onClick={() => selectedOutboxId && confirmAndPost(`/api/admin/outbox/${selectedOutboxId}/ack`, "Acknowledge dead letter", `This marks outbox item ${shortId(selectedOutboxId)} as manually reviewed. It should only be used when retry is no longer appropriate.`)}>
-                  <strong>Acknowledge dead letter</strong>
-                  <small>Mark reviewed when retry is no longer needed.</small>
-                </button>
+              <div className="admin-ops-column">
+                <div className="admin-actions">
+                  <h3>Operations</h3>
+                  <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-start", "Record simulated start", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStartTransaction.")}>
+                    <strong>Record simulated start</strong>
+                    <small>Audit-only simulator action.</small>
+                  </button>
+                  <button type="button" className="ghost-button action-button" onClick={() => confirmAndPost("/api/admin/simulator/remote-stop", "Record simulated stop", "This writes an admin audit event only. It does not contact the simulator, manage a WebSocket connection, or send RemoteStopTransaction.")}>
+                    <strong>Record simulated stop</strong>
+                    <small>Audit-only simulator action.</small>
+                  </button>
+                  <button type="button" className="ghost-button action-button" onClick={() => selectedOutboxId && confirmAndPost(`/api/admin/outbox/${selectedOutboxId}/retry`, "Retry failed outbox", `This requeues outbox item ${shortId(selectedOutboxId)} for delivery. Use it after fixing the cause of a failed webhook or downstream delivery.`)}>
+                    <strong>Retry failed outbox item</strong>
+                    <small>Requeue the oldest visible failed item.</small>
+                  </button>
+                  <button type="button" className="ghost-button action-button" onClick={() => selectedOutboxId && confirmAndPost(`/api/admin/outbox/${selectedOutboxId}/ack`, "Acknowledge dead letter", `This marks outbox item ${shortId(selectedOutboxId)} as manually reviewed. It should only be used when retry is no longer appropriate.`)}>
+                    <strong>Acknowledge dead letter</strong>
+                    <small>Mark reviewed when retry is no longer needed.</small>
+                  </button>
+                </div>
+
+                {isAdmin ? (
+                  <div className="admin-station-tools">
+                    <h3>Station controls</h3>
+                    <div className="user-form station-state-form">
+                      <GlassSelect
+                        label="Station"
+                        value={selectedStationId ?? ""}
+                        options={state.stations.map((station) => ({
+                          value: station.id,
+                          label: station.label,
+                          description: `${station.external_id ?? station.id} · ${station.online ? "Online" : "Offline"}`,
+                        }))}
+                        open={openSelect === "station-state"}
+                        onOpen={() => setOpenSelect(openSelect === "station-state" ? null : "station-state")}
+                        onChange={(value) => {
+                          setSelectedStationId(value);
+                          setOpenSelect(null);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={!selectedStation || selectedStation.online}
+                        onClick={() => {
+                          if (!selectedStation) return;
+                          confirmAndPost(
+                            `/api/admin/stations/${selectedStation.id}/online`,
+                            "Set station online",
+                            `Mark ${selectedStation.label} online. Connector states are not changed.`,
+                          );
+                        }}
+                      >
+                        Set online
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={!selectedStation || !selectedStation.online}
+                        onClick={() => {
+                          if (!selectedStation) return;
+                          confirmAndPost(
+                            `/api/admin/stations/${selectedStation.id}/offline`,
+                            "Set station offline",
+                            `Mark ${selectedStation.label} offline and block new simulated sessions. Connector states are preserved.`,
+                          );
+                        }}
+                      >
+                        Set offline
+                      </button>
+                    </div>
+                    <div className="user-form station-token-form">
+                      <GlassSelect
+                        label="Station token"
+                        value={selectedStationId ?? ""}
+                        options={state.stations.map((station) => ({
+                          value: station.id,
+                          label: station.label,
+                          description: station.external_id,
+                        }))}
+                        open={openSelect === "station-token-rotate"}
+                        onOpen={() => setOpenSelect(openSelect === "station-token-rotate" ? null : "station-token-rotate")}
+                        onChange={(value) => {
+                          setSelectedStationId(value);
+                          setOpenSelect(null);
+                        }}
+                      />
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="New station token (32+ characters)"
+                        value={newStationToken}
+                        onChange={(event) => setNewStationToken(event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={!selectedStation || newStationToken.length < 32}
+                        onClick={() => {
+                          if (!selectedStation) return;
+                          confirmAndPost(
+                            `/api/admin/stations/${selectedStation.id}/token`,
+                            "Rotate station token",
+                            `Replace the OCPP token for ${selectedStation.label}. The station must use the new token on its next connection.`,
+                            { token: newStationToken },
+                          );
+                          setNewStationToken("");
+                        }}
+                      >
+                        Rotate station token
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
             {isAdmin ? (
@@ -1582,47 +1679,6 @@ export default function Page() {
                   </button>
                   <button type="button" className="ghost-button user-form-wide" disabled title="Rotate the partner webhook secret by updating deploy/.env and restarting the stack.">
                     Rotate webhook secret
-                  </button>
-                </div>
-                <div className="user-form">
-                  <GlassSelect
-                    label="Station token"
-                    value={selectedStationId ?? ""}
-                    options={state.stations.map((station) => ({
-                      value: station.id,
-                      label: station.label,
-                      description: station.external_id,
-                    }))}
-                    open={openSelect === "station-token"}
-                    onOpen={() => setOpenSelect(openSelect === "station-token" ? null : "station-token")}
-                    onChange={(value) => {
-                      setSelectedStationId(value);
-                      setOpenSelect(null);
-                    }}
-                  />
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder="New station token (32+ characters)"
-                    value={newStationToken}
-                    onChange={(event) => setNewStationToken(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    disabled={!selectedStation || newStationToken.length < 32}
-                    onClick={() => {
-                      if (!selectedStation) return;
-                      confirmAndPost(
-                        `/api/admin/stations/${selectedStation.id}/token`,
-                        "Rotate station token",
-                        `Replace the OCPP token for ${selectedStation.label}. The station must use the new token on its next connection.`,
-                        { token: newStationToken },
-                      );
-                      setNewStationToken("");
-                    }}
-                  >
-                    Rotate station token
                   </button>
                 </div>
               </div>

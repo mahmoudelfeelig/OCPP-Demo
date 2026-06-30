@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -8,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, require_role
 from app.db.session import get_db
 from app.core.security import hash_password, hash_station_token
-from app.models.entities import AuditEvent, Connector, ConnectorState, OutboxEvent, OutboxStatus, Role, Station, User
+from app.models.entities import AuditEvent, Connector, ConnectorState, OutboxEvent, OutboxStatus, Role, Station, StationState, User
 from app.repositories.outbox import OutboxRepository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -311,6 +313,58 @@ async def toggle_station_maintenance(
     )
     db.commit()
     return AdminActionResponse(status="accepted", action=f"station_maintenance:{station_id}")
+
+
+@router.post("/stations/{station_id}/online", response_model=AdminActionResponse)
+async def station_online(
+    station_id: str,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> AdminActionResponse:
+    station = db.get(Station, station_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    previous_state = station.state
+    station.online = True
+    station.state = StationState.ONLINE.value
+    station.last_seen_at = datetime.now(UTC)
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="station_online",
+            entity_type="station",
+            entity_id=station.id,
+            payload={"previous_state": previous_state, "online": True},
+        )
+    )
+    db.commit()
+    return AdminActionResponse(status="accepted", action=f"station_online:{station_id}")
+
+
+@router.post("/stations/{station_id}/offline", response_model=AdminActionResponse)
+async def station_offline(
+    station_id: str,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+) -> AdminActionResponse:
+    station = db.get(Station, station_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    previous_state = station.state
+    station.online = False
+    station.state = StationState.OFFLINE.value
+    station.last_seen_at = None
+    db.add(
+        AuditEvent(
+            actor_user_id=current_user.id,
+            action="station_offline",
+            entity_type="station",
+            entity_id=station.id,
+            payload={"previous_state": previous_state, "online": False},
+        )
+    )
+    db.commit()
+    return AdminActionResponse(status="accepted", action=f"station_offline:{station_id}")
 
 
 @router.post("/stations/{station_id}/token", response_model=AdminActionResponse)

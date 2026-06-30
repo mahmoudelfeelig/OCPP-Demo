@@ -117,6 +117,8 @@ async def test_operator_cannot_use_admin_only_actions(api_db) -> None:
         users_response = await client.get("/admin/users", headers=headers)
         create_response = await client.post("/admin/users", json={"email": "new@test.local", "password": "secret123"}, headers=headers)
         maintenance_response = await client.post(f"/admin/stations/{station['id']}/maintenance", json={"enabled": True}, headers=headers)
+        station_online_response = await client.post(f"/admin/stations/{station['id']}/online", headers=headers)
+        station_offline_response = await client.post(f"/admin/stations/{station['id']}/offline", headers=headers)
         connector_response = await client.post(f"/admin/connectors/{connector['id']}/unavailable", headers=headers)
         retry_response = await client.post(f"/admin/outbox/{failed['id']}/retry", headers=headers)
         ack_response = await client.post(f"/admin/outbox/{dead_letter['id']}/ack", headers=headers)
@@ -125,6 +127,8 @@ async def test_operator_cannot_use_admin_only_actions(api_db) -> None:
         assert users_response.status_code == 403
         assert create_response.status_code == 403
         assert maintenance_response.status_code == 403
+        assert station_online_response.status_code == 403
+        assert station_offline_response.status_code == 403
         assert connector_response.status_code == 403
         assert retry_response.status_code == 403
         assert ack_response.status_code == 403
@@ -143,6 +147,20 @@ async def test_admin_can_use_recovery_and_maintenance_actions(api_db) -> None:
         failed = next(row for row in outbox if row["status"] == "failed")
 
         assert (await client.post(f"/admin/stations/{station['id']}/maintenance", json={"enabled": True}, headers=headers)).status_code == 200
+        offline_response = await client.post(f"/admin/stations/{station['id']}/offline", headers=headers)
+        assert offline_response.status_code == 200
+        offline_station = (await client.get(f"/stations/{station['id']}", headers=headers)).json()["item"]
+        assert offline_station["online"] is False
+        assert offline_station["state"] == "offline"
+        assert offline_station["last_seen_at"] is None
+
+        online_response = await client.post(f"/admin/stations/{station['id']}/online", headers=headers)
+        assert online_response.status_code == 200
+        online_station = (await client.get(f"/stations/{station['id']}", headers=headers)).json()["item"]
+        assert online_station["online"] is True
+        assert online_station["state"] == "online"
+        assert online_station["last_seen_at"] is not None
+
         assert (await client.post(f"/admin/connectors/{connector['id']}/unavailable", headers=headers)).status_code == 200
         assert (await client.post(f"/admin/connectors/{connector['id']}/available", headers=headers)).status_code == 200
         assert (
@@ -166,6 +184,8 @@ async def test_admin_actions_return_404_for_missing_entities(api_db) -> None:
             ("/admin/outbox/missing/retry", None),
             ("/admin/outbox/missing/ack", None),
             ("/admin/stations/missing/maintenance", {"enabled": True}),
+            ("/admin/stations/missing/online", None),
+            ("/admin/stations/missing/offline", None),
             ("/admin/stations/missing/token", {"token": "new-station-token-with-at-least-32-characters"}),
             ("/admin/connectors/missing/available", None),
             ("/admin/connectors/missing/unavailable", None),

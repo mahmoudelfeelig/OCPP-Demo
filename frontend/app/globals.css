@@ -1412,7 +1412,23 @@ button:hover {
 }
 
 .admin-card .user-form {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(150px, 0.55fr) minmax(170px, 0.65fr);
+}
+
+.admin-card .station-state-form {
+  grid-template-columns: minmax(280px, 1fr) minmax(150px, 0.38fr) minmax(150px, 0.38fr);
+}
+
+.admin-card .station-state-form .glass-select {
+  grid-column: auto;
+}
+
+.admin-card .station-token-form {
+  grid-template-columns: minmax(250px, 0.85fr) minmax(280px, 1fr) minmax(210px, 0.65fr);
+}
+
+.admin-card .station-token-form button {
+  grid-column: auto;
 }
 
 .text-link {
@@ -1533,6 +1549,8 @@ button:hover {
 .meter-timeline,
 .state-history,
 .webhook-feed,
+.admin-ops-column,
+.admin-station-tools,
 .user-admin,
 .user-table,
 .admin-actions {
@@ -1542,19 +1560,49 @@ button:hover {
 }
 
 .admin-actions {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 0;
+  align-content: start;
+  gap: 0.7rem;
+}
+
+.admin-ops-column,
+.user-admin {
+  margin-top: 0;
+  align-content: start;
+}
+
+.admin-ops-column {
+  gap: 1.25rem;
+}
+
+.user-admin {
+  border-top: 1px solid var(--line);
+  padding-top: 1.1rem;
+}
+
+.admin-station-tools {
+  gap: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.1rem;
+}
+
+.admin-actions h3,
+.admin-station-tools h3,
+.user-admin > h3 {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .admin-actions .action-button {
-  min-height: 76px;
+  min-height: 96px;
 }
 
 .admin-desktop-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
-  gap: 1rem;
-  margin-top: 0.9rem;
+  grid-template-columns: 1fr;
+  gap: 1.35rem;
+  margin-top: 1rem;
   align-items: start;
 }
 
@@ -1607,9 +1655,10 @@ button:hover {
 .admin-user-row {
   align-items: center;
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) auto auto minmax(190px, auto);
-  border-bottom: 1px solid var(--line);
-  padding: 0.75rem 0;
+  grid-template-columns: minmax(320px, 1fr) auto minmax(100px, auto) minmax(250px, auto);
+  gap: 0.8rem;
+  border-bottom: 0;
+  padding: 0.8rem 0.9rem;
 }
 
 .admin-user-row:last-child {
@@ -1819,6 +1868,21 @@ button:hover {
     grid-template-columns: 1fr;
   }
 
+  .admin-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-card .user-form,
+  .admin-card .station-state-form,
+  .admin-card .station-token-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-card .station-state-form .glass-select,
+  .admin-card .station-token-form button {
+    grid-column: 1 / -1;
+  }
+
   .sites-workspace {
     grid-template-columns: 1fr;
   }
@@ -1899,7 +1963,9 @@ button:hover {
   .system-grid,
   .system-summary,
   .user-form,
-  .admin-card .user-form {
+  .admin-card .user-form,
+  .admin-card .station-state-form,
+  .admin-card .station-token-form {
     grid-template-columns: 1fr;
   }
 
