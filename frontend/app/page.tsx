@@ -708,6 +708,12 @@ export default function Page() {
     }
   }
 
+  function selectStation(stationId: string) {
+    const station = state.stations.find((item) => item.id === stationId);
+    setSelectedStationId(stationId);
+    if (station) setSelectedSiteId(station.site_id);
+  }
+
   function clearSession(message = "Session expired. Sign in again.") {
     window.localStorage.removeItem("ocpp-token");
     setToken(null);
@@ -1119,9 +1125,7 @@ export default function Page() {
                   open={openSelect === "overview-station"}
                   onOpen={() => setOpenSelect(openSelect === "overview-station" ? null : "overview-station")}
                   onChange={(value) => {
-                    const station = state.stations.find((item) => item.id === value);
-                    setSelectedStationId(value);
-                    if (station) setSelectedSiteId(station.site_id);
+                    selectStation(value);
                     setOpenSelect(null);
                   }}
                 />
@@ -1356,9 +1360,7 @@ export default function Page() {
                     open={openSelect === "station"}
                     onOpen={() => setOpenSelect(openSelect === "station" ? null : "station")}
                     onChange={(value) => {
-                      const station = state.stations.find((item) => item.id === value);
-                      setSelectedStationId(value);
-                      if (station) setSelectedSiteId(station.site_id);
+                      selectStation(value);
                       setOpenSelect(null);
                     }}
                   />
@@ -1536,7 +1538,7 @@ export default function Page() {
                         open={openSelect === "station-state"}
                         onOpen={() => setOpenSelect(openSelect === "station-state" ? null : "station-state")}
                         onChange={(value) => {
-                          setSelectedStationId(value);
+                          selectStation(value);
                           setOpenSelect(null);
                         }}
                       />
@@ -1583,7 +1585,7 @@ export default function Page() {
                         open={openSelect === "station-token-rotate"}
                         onOpen={() => setOpenSelect(openSelect === "station-token-rotate" ? null : "station-token-rotate")}
                         onChange={(value) => {
-                          setSelectedStationId(value);
+                          selectStation(value);
                           setOpenSelect(null);
                         }}
                       />
