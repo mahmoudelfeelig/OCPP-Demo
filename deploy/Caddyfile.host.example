@@ -1,3 +1,0 @@
-ocpp.elfeel.me {
-	reverse_proxy ocpp-demo-web:80
-}

@@ -30,9 +30,7 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 
 ## Local Setup
 
-1. Copy the example env files:
-   - `cp .env.example .env`
-   - `cp deploy/.env.example deploy/.env`
+1. Copy the local example environment: `cp .env.example .env`.
 2. Start the stack:
    - `make up`
 3. Open the demo through Caddy:
@@ -62,12 +60,12 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 
 ## Operations Notes
 
-- Production secrets live in `deploy/.env` and are not committed.
+- Production runtime values are held by the private deployment controller. They are never committed or copied into repository-level GitHub secrets.
 - Local demo data is controlled by `SEED_DEMO_DATA=true` in `.env`. It creates sample sites, stations, messages, and demo accounts for development only.
-- Production should keep `SEED_DEMO_DATA=false` in `deploy/.env`.
-- For a first production admin, set `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` in `deploy/.env`, start the stack once, sign in, then remove or clear those bootstrap values after the admin exists.
+- The controller-managed production environment must keep `SEED_DEMO_DATA=false`.
+- Creating the first production admin is an attended runtime operation: provide the bootstrap values through the controller, verify the account, and clear them immediately afterward.
 - Do not use demo seeded accounts as a production bootstrap path.
-- Rotate the partner webhook secret by updating `PARTNER_WEBHOOK_SECRET` in `deploy/.env` and restarting the stack; the UI shows this as a manual operator flow rather than an automated secret manager integration.
+- Rotate `PARTNER_WEBHOOK_SECRET` through a reviewed controller-managed runtime update; the UI shows this as a manual operator flow rather than an automated secret-manager integration.
 - Configure `OCPP_STATION_TOKENS` as a JSON object mapping station external IDs to unique random tokens of at least 32 characters. The backend stores only SHA-256 token hashes.
 - Chargers connect to `/ocpp/{station-id}` with `Authorization: Bearer <station-token>`. Admins can rotate a station token from the Admin view; update the charger and simulator environment with the same new token before reconnecting.
 - Simulator state, scenario, and run endpoints require a currently active admin or operator bearer token.
@@ -89,25 +87,8 @@ It focuses on the engineering judgment behind reliable OCPP ingestion, async pro
 
 ## Deployment
 
-- The production stack uses [`docker-compose.prod.yml`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/docker-compose.prod.yml).
-- Production builds images directly on the Hetzner server from the checked-out source; no GHCR registry is required.
-- The app edge container is named `ocpp-demo-web` and joins the shared external Docker network `web`.
-- The host-Caddy sample lives in [`deploy/Caddyfile.host.example`](/mnt/d/Stuff/Projects/Tools/OCPP-Demo/deploy/Caddyfile.host.example).
+After a successful `ci-deploy` push workflow on `main`, [the production caller](.github/workflows/deploy-production.yml) delegates the release to the shared gateway at an immutable commit. The caller has only `actions: read`, `contents: read`, and `id-token: write`; its short-lived OIDC identity binds the request to the repository, branch, CI run, and exact source commit.
 
-Host Caddy route:
+[The release manifest](.github/hetzner-release.json) defines the reviewed backend, frontend, and simulator image build inputs. The shared gateway publishes the immutable release request, and the private controller independently owns runtime configuration, routing, deployment policy, receipts, and rollback state. No host login, private key, address, or filesystem path belongs in this repository or its GitHub configuration.
 
-```caddy
-ocpp.elfeel.me {
-    reverse_proxy ocpp-demo-web:80
-}
-```
-
-Server deploy command:
-
-```bash
-cd /opt/ocpp-backend-demo
-git pull --ff-only
-docker compose --env-file deploy/.env -f docker-compose.prod.yml up -d --build --remove-orphans
-```
-
-GitHub Actions deploys by SSHing into the server and running that same source-build flow after tests pass.
+[`docker-compose.prod.yml`](docker-compose.prod.yml), [`deploy/.env.example`](deploy/.env.example), and [`deploy/Caddyfile.prod`](deploy/Caddyfile.prod) remain application-level runtime specifications. They are not direct production deployment instructions. Changes to the release caller, manifest, or runtime specifications require production review.

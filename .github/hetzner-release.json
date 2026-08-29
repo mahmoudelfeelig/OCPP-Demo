@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "ocpp",
+  "source": {
+    "repository": "mahmoudelfeelig/OCPP-Demo",
+    "default_branch": "main",
+    "required_workflows": ["ci-deploy"]
+  },
+  "registry": {
+    "host": "registry.elfeel.me",
+    "image_namespace": "apps/ocpp",
+    "release_repository": "releases/ocpp"
+  },
+  "release": {
+    "strategy": "source-build",
+    "components": [
+      {
+        "name": "backend",
+        "context": "backend",
+        "dockerfile": "backend/Dockerfile"
+      },
+      {
+        "name": "frontend",
+        "context": "frontend",
+        "dockerfile": "frontend/Dockerfile"
+      },
+      {
+        "name": "simulator",
+        "context": "simulator",
+        "dockerfile": "simulator/Dockerfile"
+      }
+    ]
+  }
+}

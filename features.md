@@ -131,7 +131,7 @@
 - [x] Add connector detail panel.
 - [x] Add role-aware admin visibility.
 - [x] Show high-level health and metrics summaries.
-- [x] Compare the visual treatment against `/mnt/d/Stuff/Projects/Sites/RPS` and tune spacing, glass, and typography.
+- [x] Compare the visual treatment against the RPS reference and tune spacing, glass, and typography.
 - [x] Add frontend smoke tests.
 - [ ] Add mobile layout QA screenshots.
 - [x] Add loading, empty, and error states for every major panel.
@@ -167,9 +167,9 @@
 # Deployment And Documentation
 - [x] Add `README.md` with scope, setup, commands, demo flow, operations notes, troubleshooting, and deployment links.
 - [x] Add `.env.example`.
-- [x] Add deployment docs for Hetzner/Caddy.
-- [x] Add production Compose file.
-- [x] Document that production secrets are not committed.
+- [x] Delegate releases through the immutable shared OIDC workflow.
+- [x] Keep the production Compose file as an application runtime specification.
+- [x] Keep production runtime values in the private controller, outside the repository and GitHub secrets.
 - [x] Add smoke-check script documentation.
 - [x] Add architecture diagram.
 - [x] Add final demo checklist for `ocpp.elfeel.me` once the host is provisioned.
