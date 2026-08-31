@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-GATEWAY_REVISION = "1d0be0bb3b6ac26ce749e382081d320855d5bcba"
+GATEWAY_REVISION = "f6319b2dbaf4c1f10230c6425967f34553acd61d"
 
 
 def test_production_release_uses_the_immutable_shared_oidc_caller() -> None:
