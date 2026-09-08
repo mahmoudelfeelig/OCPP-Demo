@@ -40,14 +40,22 @@ def test_partner_webhook_duplicate_event_is_rejected(db_session) -> None:
     assert db_session.query(OutboxEvent).count() == 1
 
 
-def test_invalid_partner_webhook_signature_is_visible_without_outbox(db_session) -> None:
+def test_invalid_partner_webhook_signature_does_not_claim_event_id(db_session) -> None:
+    settings = get_settings()
     payload = json.dumps({"event_id": "evt-invalid", "station_id": "ST-1"})
 
     with pytest.raises(ValueError, match="Invalid signature"):
         ingest_partner_webhook(db_session, "evt-invalid", payload, "invalid")
 
-    event = db_session.query(PartnerEvent).one()
-    assert event.signature_valid is False
-    assert event.status == PartnerEventStatus.FAILED.value
-    assert event.last_error == "Invalid signature"
-    assert db_session.query(OutboxEvent).count() == 0
+    assert db_session.query(PartnerEvent).count() == 0
+
+    signature = __import__("hmac").new(
+        settings.partner_webhook_secret.encode("utf-8"),
+        payload.encode("utf-8"),
+        __import__("hashlib").sha256,
+    ).hexdigest()
+    event = ingest_partner_webhook(db_session, "evt-invalid", payload, signature)
+
+    assert event.status == PartnerEventStatus.RECEIVED.value
+    assert db_session.query(PartnerEvent).count() == 1
+    assert db_session.query(OutboxEvent).count() == 1

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
-import hmac
 import hashlib
+import hmac
+import json
 
 from opentelemetry import trace
 from sqlalchemy import select
@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.metrics import failed_messages, webhook_events
-from app.models.entities import OutboxEvent, OutboxStatus, PartnerEvent, PartnerEventStatus
+from app.models.entities import (
+    OutboxEvent,
+    OutboxStatus,
+    PartnerEvent,
+    PartnerEventStatus,
+)
 from app.repositories.outbox import OutboxRepository
 
 tracer = trace.get_tracer(__name__)
@@ -28,24 +33,12 @@ def ingest_partner_webhook(db: Session, event_id: str, payload_text: str, signat
             if signature is None:
                 raise ValueError("Missing signature")
 
+            if not verify_signature(payload_text, signature):
+                raise ValueError("Invalid signature")
+
             existing = db.scalar(select(PartnerEvent).where(PartnerEvent.event_id == event_id))
             if existing is not None:
                 raise LookupError("Duplicate partner event")
-
-            signature_valid = verify_signature(payload_text, signature)
-            if not signature_valid:
-                event = PartnerEvent(
-                    event_id=event_id,
-                    signature_valid=False,
-                    status=PartnerEventStatus.FAILED.value,
-                    last_error="Invalid signature",
-                    raw_payload_text=payload_text,
-                    payload=json.loads(payload_text) if payload_text else {},
-                )
-                db.add(event)
-                db.commit()
-                db.refresh(event)
-                raise ValueError("Invalid signature")
 
             event = PartnerEvent(
                 event_id=event_id,
