@@ -18,6 +18,12 @@ COPY alembic alembic
 COPY alembic.ini alembic.ini
 COPY tests tests
 
+RUN addgroup --system ocpp && adduser --system --ingroup ocpp ocpp \
+    && chown -R ocpp:ocpp /app
+USER ocpp
+
 EXPOSE 8000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null || exit 1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

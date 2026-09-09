@@ -102,7 +102,12 @@ if (!page.includes("unoptimized")) {
   missing.push("image:direct-logo-serving");
 }
 
-if (!dockerfile.includes("COPY public public") || !dockerfile.includes("COPY --from=builder /app/public ./public")) {
+const copiesPublicIntoBuild = dockerfile.includes("COPY public public");
+const copiesPublicIntoRuntime = /COPY(?:\s+--[^\s]+)*\s+--from=builder\s+\/app\/public\s+\.\/public/.test(
+  dockerfile,
+);
+
+if (!copiesPublicIntoBuild || !copiesPublicIntoRuntime) {
   missing.push("docker:public-assets");
 }
 
